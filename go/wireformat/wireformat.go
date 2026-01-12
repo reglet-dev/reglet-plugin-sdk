@@ -3,8 +3,6 @@
 // and backward compatible as they define the ABI contract.
 package wireformat
 
-
-
 import (
 	"fmt"
 	"time"
