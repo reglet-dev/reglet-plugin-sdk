@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/reglet-dev/reglet/sdk/internal/abi"
-	_ "github.com/reglet-dev/reglet/sdk/log" // Initialize WASM logging handler
+	"github.com/reglet-dev/reglet-sdk/go/internal/abi"
+	_ "github.com/reglet-dev/reglet-sdk/go/log" // Initialize WASM logging handler
 )
 
 // host_tcp_connect calls the host function to establish a TCP connection

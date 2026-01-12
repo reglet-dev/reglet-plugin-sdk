@@ -23,8 +23,8 @@ import (
     "context"
     "log/slog"
 
-    "github.com/reglet-dev/reglet/sdk"
-    _ "github.com/reglet-dev/reglet/sdk/log" // Import to initialize
+    "github.com/reglet-dev/reglet-sdk/go"
+    _ "github.com/reglet-dev/reglet-sdk/go/log" // Import to initialize
 )
 
 type MyPlugin struct{}
@@ -207,7 +207,7 @@ The log package automatically initializes itself when imported:
 
 ```go
 import (
-    _ "github.com/reglet-dev/reglet/sdk/log" // Initialize WASM logging
+    _ "github.com/reglet-dev/reglet-sdk/go/log" // Initialize WASM logging
 )
 ```
 

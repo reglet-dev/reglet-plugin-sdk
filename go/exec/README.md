@@ -22,8 +22,8 @@ import (
     "context"
     "log"
 
-    "github.com/reglet-dev/reglet/sdk"
-    "github.com/reglet-dev/reglet/sdk/exec"
+    "github.com/reglet-dev/reglet-sdk/go"
+    "github.com/reglet-dev/reglet-sdk/go/exec"
 )
 
 type MyPlugin struct{}

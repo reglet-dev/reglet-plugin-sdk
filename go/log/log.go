@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/reglet-dev/reglet/sdk/internal/abi"
-	sdkcontext "github.com/reglet-dev/reglet/sdk/internal/context"
-	"github.com/reglet-dev/reglet/wireformat"
+	"github.com/reglet-dev/reglet-sdk/go/internal/abi"
+	sdkcontext "github.com/reglet-dev/reglet-sdk/go/internal/context"
+	"github.com/reglet-dev/reglet-sdk/go/wireformat"
 )
 
 // Define the host function signature for logging messages.

@@ -5,7 +5,7 @@ package net
 import (
 	"context"
 
-	sdkcontext "github.com/reglet-dev/reglet/sdk/internal/context"
+	sdkcontext "github.com/reglet-dev/reglet-sdk/go/internal/context"
 )
 
 // createContextWireFormat extracts relevant info from a Go context into the wire format.

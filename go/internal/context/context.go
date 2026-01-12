@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/reglet-dev/reglet/wireformat"
+	"github.com/reglet-dev/reglet-sdk/go/wireformat"
 )
 
 // contextStore holds the current context for the plugin execution.

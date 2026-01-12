@@ -38,8 +38,8 @@ import (
     "context"
     "log/slog"
 
-    "github.com/reglet-dev/reglet/sdk"
-    "github.com/reglet-dev/reglet/sdk/net"
+    "github.com/reglet-dev/reglet-sdk/go"
+    "github.com/reglet-dev/reglet-sdk/go/net"
 )
 
 type DNSPlugin struct{}
@@ -167,7 +167,7 @@ import (
     "context"
     "io"
 
-    sdknet "github.com/reglet-dev/reglet/sdk/net"
+    sdknet "github.com/reglet-dev/reglet-sdk/go/net"
 )
 
 func (p *HTTPPlugin) Check(ctx context.Context, config sdk.Config) (sdk.Evidence, error) {
@@ -306,8 +306,8 @@ if err != nil {
 import (
     "context"
 
-    "github.com/reglet-dev/reglet/sdk"
-    sdknet "github.com/reglet-dev/reglet/sdk/net"
+    "github.com/reglet-dev/reglet-sdk/go"
+    sdknet "github.com/reglet-dev/reglet-sdk/go/net"
 )
 
 func (p *TCPPlugin) Check(ctx context.Context, config sdk.Config) (sdk.Evidence, error) {
@@ -394,8 +394,8 @@ return sdk.Success(map[string]interface{}{
 import (
     "context"
 
-    "github.com/reglet-dev/reglet/sdk"
-    sdknet "github.com/reglet-dev/reglet/sdk/net"
+    "github.com/reglet-dev/reglet-sdk/go"
+    sdknet "github.com/reglet-dev/reglet-sdk/go/net"
 )
 
 func (p *SMTPPlugin) Check(ctx context.Context, config sdk.Config) (sdk.Evidence, error) {

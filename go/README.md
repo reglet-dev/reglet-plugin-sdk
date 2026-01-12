@@ -5,7 +5,6 @@ The Reglet Go SDK provides Go APIs for writing WebAssembly (WASM) plugins for th
 ## Version
 
 **Current Version**: `0.1.0-alpha`
-**Minimum Host Version**: `0.2.0`
 
 ## Features
 
@@ -18,7 +17,7 @@ The Reglet Go SDK provides Go APIs for writing WebAssembly (WASM) plugins for th
 ## Installation
 
 ```bash
-go get github.com/reglet-dev/reglet/sdk
+go get github.com/reglet-dev/reglet-sdk/go
 ```
 
 ## Quick Start
@@ -32,8 +31,8 @@ import (
     "context"
     "log/slog"
 
-    sdk "github.com/reglet-dev/reglet/sdk"
-    _ "github.com/reglet-dev/reglet/sdk/log" // Initialize logging
+    sdk "github.com/reglet-dev/reglet-sdk/go"
+    _ "github.com/reglet-dev/reglet-sdk/go/log" // Initialize logging
 )
 
 type MyPlugin struct{}
@@ -172,7 +171,7 @@ The **host is responsible** for validating compatibility:
 Use the `WasmResolver` for DNS lookups:
 
 ```go
-import sdknet "github.com/reglet-dev/reglet/sdk/net"
+import sdknet "github.com/reglet-dev/reglet-sdk/go/net"
 
 resolver := &sdknet.WasmResolver{
     Nameserver: "", // Empty = use host's default
@@ -186,7 +185,7 @@ See [net/README.md](net/README.md) for full DNS API documentation.
 
 **Option 1 - SDK Helpers (Recommended):**
 ```go
-import sdknet "github.com/reglet-dev/reglet/sdk/net"
+import sdknet "github.com/reglet-dev/reglet-sdk/go/net"
 
 resp, err := sdknet.Get(ctx, "https://example.com")
 defer resp.Body.Close()
@@ -196,7 +195,7 @@ defer resp.Body.Close()
 ```go
 import (
     "net/http"
-    sdknet "github.com/reglet-dev/reglet/sdk/net"
+    sdknet "github.com/reglet-dev/reglet-sdk/go/net"
 )
 
 client := &http.Client{
@@ -215,7 +214,7 @@ See [net/README.md](net/README.md) for full HTTP API documentation.
 ### TCP Connections
 
 ```go
-import sdknet "github.com/reglet-dev/reglet/sdk/net"
+import sdknet "github.com/reglet-dev/reglet-sdk/go/net"
 
 // DialTCP(ctx, host, port, timeoutMs, useTLS)
 conn, err := sdknet.DialTCP(ctx, "example.com", "443", 5000, true)
@@ -238,7 +237,7 @@ See [net/README.md](net/README.md) for full TCP API documentation.
 Execute host commands via sandboxed interface:
 
 ```go
-import "github.com/reglet-dev/reglet/sdk/exec"
+import "github.com/reglet-dev/reglet-sdk/go/exec"
 
 req := exec.CommandRequest{
     Command: "systemctl",
@@ -268,7 +267,7 @@ Use Go's standard `log/slog` package:
 ```go
 import (
     "log/slog"
-    _ "github.com/reglet-dev/reglet/sdk/log" // Initialize WASM logging
+    _ "github.com/reglet-dev/reglet-sdk/go/log" // Initialize WASM logging
 )
 
 func (p *MyPlugin) Check(ctx context.Context, config sdk.Config) (sdk.Evidence, error) {

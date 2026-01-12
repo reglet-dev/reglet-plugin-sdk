@@ -11,9 +11,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/reglet-dev/reglet/sdk/internal/abi"
-	_ "github.com/reglet-dev/reglet/sdk/log" // Initialize WASM logging handler
-	"github.com/reglet-dev/reglet/wireformat"
+	"github.com/reglet-dev/reglet-sdk/go/internal/abi"
+	_ "github.com/reglet-dev/reglet-sdk/go/log" // Initialize WASM logging handler
+	"github.com/reglet-dev/reglet-sdk/go/wireformat"
 )
 
 // MaxHTTPBodySize is the maximum size of HTTP response body that can be returned.
@@ -108,7 +108,7 @@ func (t *WasmTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // correct routing through the host function.
 //
 // Option 1 - Use SDK helper functions (recommended):
-//     import sdknet "github.com/reglet-dev/reglet/sdk/net"
+//     import sdknet "github.com/reglet-dev/reglet-sdk/go/net"
 //     resp, err := sdknet.Get(ctx, "https://example.com")
 //
 // Option 2 - Create custom http.Client:

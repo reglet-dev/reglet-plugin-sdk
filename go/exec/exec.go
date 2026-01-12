@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/reglet-dev/reglet/sdk/internal/abi"
-	sdkcontext "github.com/reglet-dev/reglet/sdk/internal/context"
-	"github.com/reglet-dev/reglet/wireformat"
+	"github.com/reglet-dev/reglet-sdk/go/internal/abi"
+	sdkcontext "github.com/reglet-dev/reglet-sdk/go/internal/context"
+	"github.com/reglet-dev/reglet-sdk/go/wireformat"
 )
 
 //go:wasmimport reglet_host exec_command

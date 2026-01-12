@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/reglet-dev/reglet/wireformat"
+	"github.com/reglet-dev/reglet-sdk/go/wireformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

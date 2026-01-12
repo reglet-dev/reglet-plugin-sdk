@@ -10,9 +10,9 @@ import (
 	stdnet "net"
 	"time"
 
-	"github.com/reglet-dev/reglet/sdk/internal/abi"
-	_ "github.com/reglet-dev/reglet/sdk/log" // Initialize WASM logging handler
-	"github.com/reglet-dev/reglet/wireformat"
+	"github.com/reglet-dev/reglet-sdk/go/internal/abi"
+	_ "github.com/reglet-dev/reglet-sdk/go/log" // Initialize WASM logging handler
+	"github.com/reglet-dev/reglet-sdk/go/wireformat"
 )
 
 // Define the host function signature for DNS lookups.
