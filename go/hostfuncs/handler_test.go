@@ -24,23 +24,32 @@ func TestNewJSONHandler(t *testing.T) {
 
 	handler := NewJSONHandler(echoFunc)
 
-	// Test success
-	req := TestReq{Input: "hello"}
-	reqBytes, err := json.Marshal(req)
-	require.NoError(t, err)
+	t.Run("success", func(t *testing.T) {
+		req := TestReq{Input: "hello"}
+		reqBytes, err := json.Marshal(req)
+		require.NoError(t, err)
 
-	respBytes, err := handler(context.Background(), reqBytes)
-	require.NoError(t, err)
+		respBytes, err := handler(context.Background(), reqBytes)
+		require.NoError(t, err)
 
-	var resp TestResp
-	err = json.Unmarshal(respBytes, &resp)
-	require.NoError(t, err)
-	assert.Equal(t, "echo: hello", resp.Output)
+		var resp TestResp
+		err = json.Unmarshal(respBytes, &resp)
+		require.NoError(t, err)
+		assert.Equal(t, "echo: hello", resp.Output)
+	})
 
-	// Test invalid JSON
-	_, err = handler(context.Background(), []byte("{invalid-json"))
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unmarshal")
+	t.Run("invalid JSON returns ErrorResponse", func(t *testing.T) {
+		// NewJSONHandler now returns structured JSON error instead of Go error
+		respBytes, err := handler(context.Background(), []byte("{invalid-json"))
+		require.NoError(t, err) // No Go error
+		require.NotNil(t, respBytes)
+
+		var errResp ErrorResponse
+		require.NoError(t, json.Unmarshal(respBytes, &errResp))
+		assert.Equal(t, "VALIDATION_ERROR", errResp.Error)
+		assert.Equal(t, 400, errResp.Code)
+		assert.Contains(t, errResp.Message, "unmarshal")
+	})
 }
 
 func TestNewJSONHandler_WithExec(t *testing.T) {

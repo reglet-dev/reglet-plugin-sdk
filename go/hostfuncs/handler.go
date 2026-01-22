@@ -15,7 +15,11 @@ type HostFunc[Req any, Resp any] func(context.Context, Req) Resp
 type ByteHandler func(context.Context, []byte) ([]byte, error)
 
 // NewJSONHandler wraps a typed HostFunc into a ByteHandler.
-// It handles the JSON unmarshalling of the request and marshalling of the response.
+// It handles the JSON unmarshalling of the request and marshaling of the response.
+//
+// For infrastructure failures (malformed JSON, serialization errors), the handler
+// returns a structured ErrorResponse JSON instead of a Go error. This ensures
+// plugins always receive valid JSON and prevents WASM runtime traps.
 //
 // Usage:
 //
@@ -31,14 +35,16 @@ func NewJSONHandler[Req any, Resp any](fn HostFunc[Req, Resp]) ByteHandler {
 	return func(ctx context.Context, payload []byte) ([]byte, error) {
 		var req Req
 		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal request: %w", err)
+			// Return structured JSON error instead of Go error
+			return NewValidationError(fmt.Sprintf("failed to unmarshal request: %v", err)).ToJSON(), nil
 		}
 
 		resp := fn(ctx, req)
 
 		respBytes, err := json.Marshal(resp)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal response: %w", err)
+			// Return structured JSON error instead of Go error
+			return NewInternalError(fmt.Sprintf("failed to marshal response: %v", err)).ToJSON(), nil
 		}
 
 		return respBytes, nil
