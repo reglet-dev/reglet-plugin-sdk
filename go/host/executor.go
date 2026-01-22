@@ -39,10 +39,11 @@ func NewExecutor(ctx context.Context, opts ...Option) (*Executor, error) {
 	e.runtime = rt
 
 	if err := e.registerHostFunctions(ctx); err != nil {
-		rt.Close(ctx)
+		_ = rt.Close(ctx)
 		return nil, fmt.Errorf("failed to register host functions: %w", err)
 	}
 
+	// ... (skipping some methods) ...
 	return e, nil
 }
 
@@ -54,6 +55,8 @@ func (e *Executor) Close(ctx context.Context) error {
 // PluginInstance represents an instantiated WASM plugin.
 type PluginInstance struct {
 	module api.Module
+	// Ensure we have access to helper methods like callRaw and unmarshalPacked
+	// which are methods on PluginInstance
 }
 
 // LoadPlugin instantiates a WASM module.
@@ -90,7 +93,9 @@ func (p *PluginInstance) Schema(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	//nolint:gosec // WASM pointers are always 32-bit
 	ptr := uint32(packed >> 32)
+	//nolint:gosec // WASM lengths are always 32-bit
 	length := uint32(packed)
 	data, ok := p.module.Memory().Read(ptr, length)
 	if !ok {

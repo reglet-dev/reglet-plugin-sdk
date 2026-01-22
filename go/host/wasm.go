@@ -17,7 +17,9 @@ func (e *Executor) registerHostFunctions(ctx context.Context) error {
 		localName := name
 		builder.NewFunctionBuilder().
 			WithFunc(func(ctx context.Context, m api.Module, packed uint64) uint64 {
+				//nolint:gosec // WASM pointers are 32-bit
 				ptr := uint32(packed >> 32)
+				//nolint:gosec // WASM lengths are 32-bit
 				length := uint32(packed)
 				payload, ok := m.Memory().Read(ptr, length)
 				if !ok {
@@ -27,6 +29,7 @@ func (e *Executor) registerHostFunctions(ctx context.Context) error {
 
 				allocate := m.ExportedFunction("allocate")
 				results, _ := allocate.Call(ctx, uint64(len(resp)))
+				//nolint:gosec // WASM pointers are 32-bit
 				respPtr := uint32(results[0])
 				m.Memory().Write(respPtr, resp)
 				return (uint64(respPtr) << 32) | uint64(len(resp))
@@ -37,7 +40,9 @@ func (e *Executor) registerHostFunctions(ctx context.Context) error {
 	// 2. Register mandatory log_message function
 	builder.NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, m api.Module, packed uint64) {
+			//nolint:gosec // WASM pointers are 32-bit
 			ptr := uint32(packed >> 32)
+			//nolint:gosec // WASM lengths are 32-bit
 			length := uint32(packed)
 			payload, ok := m.Memory().Read(ptr, length)
 			if !ok {
@@ -83,6 +88,7 @@ func (p *PluginInstance) callRaw(ctx context.Context, name string, input []byte)
 		if len(resAlloc) == 0 {
 			return 0, fmt.Errorf("allocate returned no results")
 		}
+		//nolint:gosec // WASM pointers are 32-bit
 		ptr := uint32(resAlloc[0])
 		if !p.module.Memory().Write(ptr, input) {
 			return 0, fmt.Errorf("failed to write input to guest memory")
@@ -100,8 +106,11 @@ func (p *PluginInstance) callRaw(ctx context.Context, name string, input []byte)
 }
 
 func (p *PluginInstance) unmarshalPacked(packed uint64, v any) error {
+	//nolint:gosec // WASM pointers are 32-bit
 	ptr := uint32(packed >> 32)
+	//nolint:gosec // WASM lengths are 32-bit
 	length := uint32(packed)
+
 	if ptr == 0 || length == 0 {
 		return fmt.Errorf("null response from plugin")
 	}

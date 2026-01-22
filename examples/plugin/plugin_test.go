@@ -12,10 +12,10 @@ import (
 func TestExamplePlugin_Describe(t *testing.T) {
 	p := &ExamplePlugin{}
 	ctx := context.Background()
-	
+
 	metadata, err := p.Describe(ctx)
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, "Example Compliance Plugin", metadata.Name)
 	assert.Equal(t, "1.0.0", metadata.Version)
 	assert.Len(t, metadata.Capabilities, 1)
@@ -26,14 +26,14 @@ func TestExamplePlugin_Describe(t *testing.T) {
 func TestExamplePlugin_Schema(t *testing.T) {
 	p := &ExamplePlugin{}
 	ctx := context.Background()
-	
+
 	schema, err := p.Schema(ctx)
 	require.NoError(t, err)
-	
+
 	var schemaMap map[string]any
 	err = json.Unmarshal(schema, &schemaMap)
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, "http://json-schema.org/draft-07/schema#", schemaMap["$schema"])
 	assert.Contains(t, schemaMap["properties"], "target_host")
 }
