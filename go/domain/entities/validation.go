@@ -2,8 +2,8 @@ package entities
 
 // ValidationResult represents the outcome of a capability validation.
 type ValidationResult struct {
-	Valid  bool
 	Errors []ValidationError
+	Valid  bool
 }
 
 // ValidationError represents a specific validation error.

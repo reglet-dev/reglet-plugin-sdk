@@ -30,8 +30,8 @@ type KeyValueRequest struct {
 
 // CapabilityRequest represents a request for a capability to be granted (e.g. via prompt).
 type CapabilityRequest struct {
+	Rule        interface{}
 	Kind        string
 	Description string
-	Rule        interface{}
 	RiskLevel   RiskLevel
 }

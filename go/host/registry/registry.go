@@ -33,9 +33,9 @@ func WithStrictMode(enabled bool) RegistryOption {
 
 // Registry implements CapabilityRegistry.
 type Registry struct {
-	config  registryConfig
 	schemas sync.Map // map[string]string (json schema)
 	models  sync.Map // map[string]interface{}
+	config  registryConfig
 }
 
 // NewRegistry creates a new Registry with the given options.

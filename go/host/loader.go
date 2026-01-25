@@ -27,8 +27,8 @@ func defaultLoaderConfig() loaderConfig {
 
 // Loader orchestrates the manifest loading pipeline.
 type Loader struct {
-	config    loaderConfig
 	validator ports.CapabilityValidator
+	config    loaderConfig
 }
 
 // LoaderOption configures the Loader.
@@ -87,7 +87,7 @@ func NewLoader(opts ...LoaderOption) *Loader {
 
 // LoadManifest loads, parses, and validates a plugin manifest.
 func (l *Loader) LoadManifest(raw []byte, config map[string]interface{}) (*entities.PluginManifest, error) {
-	var data []byte = raw
+	var data = raw
 
 	if l.config.templateEngine != nil {
 		var err error

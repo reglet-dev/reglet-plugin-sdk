@@ -39,6 +39,6 @@ type KeyValueCapability struct {
 
 // KeyValueRule defines a single key-value access rule.
 type KeyValueRule struct {
-	Keys      []string `json:"keys" yaml:"keys" jsonschema:"required"`
 	Operation string   `json:"op" yaml:"op" jsonschema:"required,enum=read,enum=write,enum=read-write"`
+	Keys      []string `json:"keys" yaml:"keys" jsonschema:"required"`
 }

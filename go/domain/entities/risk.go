@@ -92,90 +92,118 @@ func (r *RiskAssessor) AssessGrantSet(g *GrantSet) RiskLevel {
 		return RiskLevelLow
 	}
 
+	// Check for high-risk patterns first (early exit)
+	if level := r.assessExec(g.Exec); level == RiskLevelHigh {
+		return RiskLevelHigh
+	}
+	if level := r.assessNetwork(g.Network); level == RiskLevelHigh {
+		return RiskLevelHigh
+	}
+	if level := r.assessFS(g.FS); level == RiskLevelHigh {
+		return RiskLevelHigh
+	}
+	if level := r.assessEnv(g.Env); level == RiskLevelHigh {
+		return RiskLevelHigh
+	}
+
+	// Determine highest medium risk
 	highest := RiskLevelLow
-
-	// Exec is always High risk
-	if g.Exec != nil && len(g.Exec.Commands) > 0 {
-		for _, cmd := range g.Exec.Commands {
-			if cmd == "*" || cmd == "**" {
-				return RiskLevelHigh
-			}
-			if matchesAny(cmd, DangerousShells) || matchesInterpreter(cmd) {
-				return RiskLevelHigh
-			}
-		}
-		// Any exec = medium risk
-		if highest < RiskLevelMedium {
-			highest = RiskLevelMedium
+	for _, level := range []RiskLevel{
+		r.assessExec(g.Exec),
+		r.assessNetwork(g.Network),
+		r.assessFS(g.FS),
+		r.assessKV(g.KV),
+	} {
+		if level > highest {
+			highest = level
 		}
 	}
-
-	// Network
-	if g.Network != nil {
-		for _, rule := range g.Network.Rules {
-			for _, h := range rule.Hosts {
-				if h == "*" {
-					return RiskLevelHigh
-				}
-			}
-		}
-		// Any network access = at least medium
-		if len(g.Network.Rules) > 0 && highest < RiskLevelMedium {
-			highest = RiskLevelMedium
-		}
-	}
-
-	// Filesystem
-	if g.FS != nil {
-		allPatterns := r.getBroadFilesystemPatterns()
-		for _, rule := range g.FS.Rules {
-			for _, p := range rule.Read {
-				// Check for recursive glob patterns
-				if strings.Contains(p, "**") || matchesAny(p, allPatterns) {
-					return RiskLevelHigh
-				}
-			}
-			for _, p := range rule.Write {
-				// Check for recursive glob patterns
-				if strings.Contains(p, "**") || matchesAny(p, allPatterns) {
-					return RiskLevelHigh
-				}
-				// Any write is at least Medium
-				if highest < RiskLevelMedium {
-					highest = RiskLevelMedium
-				}
-			}
-			// Sensitive reads
-			for _, p := range rule.Read {
-				if strings.HasPrefix(p, "/etc/") && highest < RiskLevelMedium {
-					highest = RiskLevelMedium
-				}
-			}
-		}
-	}
-
-	// Environment
-	if g.Env != nil {
-		allPatterns := r.getBroadEnvPatterns()
-		for _, v := range g.Env.Variables {
-			if matchesAny(v, allPatterns) {
-				return RiskLevelHigh
-			}
-		}
-	}
-
-	// KeyValue
-	if g.KV != nil {
-		for _, rule := range g.KV.Rules {
-			if rule.Operation == "write" || rule.Operation == "read-write" {
-				if highest < RiskLevelMedium {
-					highest = RiskLevelMedium
-				}
-			}
-		}
-	}
-
 	return highest
+}
+
+func (r *RiskAssessor) assessExec(exec *ExecCapability) RiskLevel {
+	if exec == nil || len(exec.Commands) == 0 {
+		return RiskLevelLow
+	}
+	for _, cmd := range exec.Commands {
+		if cmd == "*" || cmd == "**" {
+			return RiskLevelHigh
+		}
+		if matchesAny(cmd, DangerousShells) || matchesInterpreter(cmd) {
+			return RiskLevelHigh
+		}
+	}
+	return RiskLevelMedium
+}
+
+func (r *RiskAssessor) assessNetwork(network *NetworkCapability) RiskLevel {
+	if network == nil || len(network.Rules) == 0 {
+		return RiskLevelLow
+	}
+	for _, rule := range network.Rules {
+		for _, h := range rule.Hosts {
+			if h == "*" {
+				return RiskLevelHigh
+			}
+		}
+	}
+	return RiskLevelMedium
+}
+
+func (r *RiskAssessor) assessFS(fs *FileSystemCapability) RiskLevel {
+	if fs == nil || len(fs.Rules) == 0 {
+		return RiskLevelLow
+	}
+	allPatterns := r.getBroadFilesystemPatterns()
+	hasWrite := false
+	hasSensitiveRead := false
+
+	for _, rule := range fs.Rules {
+		for _, p := range rule.Read {
+			if strings.Contains(p, "**") || matchesAny(p, allPatterns) {
+				return RiskLevelHigh
+			}
+			if strings.HasPrefix(p, "/etc/") {
+				hasSensitiveRead = true
+			}
+		}
+		for _, p := range rule.Write {
+			if strings.Contains(p, "**") || matchesAny(p, allPatterns) {
+				return RiskLevelHigh
+			}
+			hasWrite = true
+		}
+	}
+
+	if hasWrite || hasSensitiveRead {
+		return RiskLevelMedium
+	}
+	return RiskLevelLow
+}
+
+func (r *RiskAssessor) assessEnv(env *EnvironmentCapability) RiskLevel {
+	if env == nil || len(env.Variables) == 0 {
+		return RiskLevelLow
+	}
+	allPatterns := r.getBroadEnvPatterns()
+	for _, v := range env.Variables {
+		if matchesAny(v, allPatterns) {
+			return RiskLevelHigh
+		}
+	}
+	return RiskLevelLow
+}
+
+func (r *RiskAssessor) assessKV(kv *KeyValueCapability) RiskLevel {
+	if kv == nil || len(kv.Rules) == 0 {
+		return RiskLevelLow
+	}
+	for _, rule := range kv.Rules {
+		if rule.Operation == "write" || rule.Operation == "read-write" {
+			return RiskLevelMedium
+		}
+	}
+	return RiskLevelLow
 }
 
 // getBroadFilesystemPatterns returns base + custom broad filesystem patterns.
@@ -200,84 +228,96 @@ func (r *RiskAssessor) getBroadEnvPatterns() []string {
 
 // DescribeRisks returns a list of human-readable risk descriptions.
 func (r *RiskAssessor) DescribeRisks(g *GrantSet) []string {
+	if g == nil {
+		return nil
+	}
+
+	var risks []string
+	risks = append(risks, r.describeExecRisks(g.Exec)...)
+	risks = append(risks, r.describeNetworkRisks(g.Network)...)
+	risks = append(risks, r.describeFSRisks(g.FS)...)
+	risks = append(risks, r.describeEnvRisks(g.Env)...)
+	risks = append(risks, r.describeKVRisks(g.KV)...)
+	return risks
+}
+
+func (r *RiskAssessor) describeExecRisks(exec *ExecCapability) []string {
+	if exec == nil || len(exec.Commands) == 0 {
+		return nil
+	}
+	return []string{"Executes external commands (High Risk)"}
+}
+
+func (r *RiskAssessor) describeNetworkRisks(network *NetworkCapability) []string {
+	if network == nil {
+		return nil
+	}
+	for _, rule := range network.Rules {
+		for _, h := range rule.Hosts {
+			if h == "*" {
+				return []string{"Accesses any network host (High Risk)"}
+			}
+		}
+	}
+	return nil
+}
+
+func (r *RiskAssessor) describeFSRisks(fs *FileSystemCapability) []string {
+	if fs == nil {
+		return nil
+	}
 	var risks []string
 
-	if g == nil {
-		return risks
-	}
-
-	if g.Exec != nil && len(g.Exec.Commands) > 0 {
-		risks = append(risks, "Executes external commands (High Risk)")
-	}
-
-	if g.Network != nil {
-		for _, rule := range g.Network.Rules {
-			for _, h := range rule.Hosts {
-				if h == "*" {
-					risks = append(risks, "Accesses any network host (High Risk)")
-					break
-				}
-			}
-		}
-	}
-
-	if g.FS != nil {
-		hasHighFS := false
-		for _, rule := range g.FS.Rules {
-			for _, p := range rule.Read {
-				if strings.Contains(p, "**") {
-					risks = append(risks, "Recursive read access to filesystem (High Risk)")
-					hasHighFS = true
-					break
-				}
-			}
-			if hasHighFS {
+	// Check for recursive access
+	for _, rule := range fs.Rules {
+		for _, p := range rule.Read {
+			if strings.Contains(p, "**") {
+				risks = append(risks, "Recursive read access to filesystem (High Risk)")
 				break
 			}
 		}
-		if !hasHighFS {
-			for _, rule := range g.FS.Rules {
-				for _, p := range rule.Write {
-					if strings.Contains(p, "**") {
-						risks = append(risks, "Recursive write access to filesystem (High Risk)")
-						hasHighFS = true
-						break
-					}
-				}
-				if hasHighFS {
-					break
-				}
-			}
-		}
-
-		// General write check
-		for _, rule := range g.FS.Rules {
-			if len(rule.Write) > 0 {
-				risks = append(risks, "Write access to filesystem")
+	}
+	for _, rule := range fs.Rules {
+		for _, p := range rule.Write {
+			if strings.Contains(p, "**") {
+				risks = append(risks, "Recursive write access to filesystem (High Risk)")
 				break
 			}
 		}
 	}
 
-	if g.Env != nil {
-		for _, v := range g.Env.Variables {
-			if v == "*" {
-				risks = append(risks, "Accesses all environment variables (High Risk)")
-				break
-			}
+	// General write check
+	for _, rule := range fs.Rules {
+		if len(rule.Write) > 0 {
+			risks = append(risks, "Write access to filesystem")
+			break
 		}
 	}
-
-	if g.KV != nil {
-		for _, rule := range g.KV.Rules {
-			if rule.Operation == "write" || rule.Operation == "read-write" {
-				risks = append(risks, "Write access to Key-Value store")
-				break
-			}
-		}
-	}
-
 	return risks
+}
+
+func (r *RiskAssessor) describeEnvRisks(env *EnvironmentCapability) []string {
+	if env == nil {
+		return nil
+	}
+	for _, v := range env.Variables {
+		if v == "*" {
+			return []string{"Accesses all environment variables (High Risk)"}
+		}
+	}
+	return nil
+}
+
+func (r *RiskAssessor) describeKVRisks(kv *KeyValueCapability) []string {
+	if kv == nil {
+		return nil
+	}
+	for _, rule := range kv.Rules {
+		if rule.Operation == "write" || rule.Operation == "read-write" {
+			return []string{"Write access to Key-Value store"}
+		}
+	}
+	return nil
 }
 
 // matchesAny checks if value matches any pattern in the list.

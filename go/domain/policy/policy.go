@@ -13,9 +13,9 @@ import (
 
 // policyConfig holds configuration for the Policy engine.
 type policyConfig struct {
-	cwd             string             // Working directory for relative path resolution
-	resolveSymlinks bool               // Whether to resolve symlinks (security feature)
 	denialHandler   ports.DenialHandler // Handler invoked on policy denials
+	cwd             string              // Working directory for relative path resolution
+	resolveSymlinks bool                // Whether to resolve symlinks (security feature)
 }
 
 func defaultPolicyConfig() policyConfig {
@@ -53,8 +53,8 @@ func WithDenialHandler(h ports.DenialHandler) PolicyOption {
 
 // Policy implements the Policy interface with stateless enforcement.
 type Policy struct {
-	config policyConfig
 	cache  sync.Map // key: *entities.GrantSet, value: *compiledGrantSet
+	config policyConfig
 }
 
 type compiledGrantSet struct {
@@ -76,8 +76,8 @@ type compiledFSRule struct {
 }
 
 type compiledKVRule struct {
-	keys []string
 	op   string
+	keys []string
 }
 
 type portRange struct {
@@ -101,89 +101,107 @@ func (p *Policy) getCompiled(grants *entities.GrantSet) *compiledGrantSet {
 		return v.(*compiledGrantSet)
 	}
 
-	c := &compiledGrantSet{}
-
-	// Network
-	if grants.Network != nil {
-		for _, rule := range grants.Network.Rules {
-			cr := compiledNetworkRule{}
-			for _, h := range rule.Hosts {
-				if doublestar.ValidatePattern(h) {
-					cr.hosts = append(cr.hosts, h)
-				}
-			}
-			for _, portStr := range rule.Ports {
-				if portStr == "*" {
-					cr.ports = append(cr.ports, portRange{0, 65535})
-					continue
-				}
-				if strings.Contains(portStr, "-") {
-					parts := strings.Split(portStr, "-")
-					if len(parts) == 2 {
-						minPort, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
-						maxPort, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
-						cr.ports = append(cr.ports, portRange{minPort, maxPort})
-					}
-				} else {
-					val, _ := strconv.Atoi(strings.TrimSpace(portStr))
-					cr.ports = append(cr.ports, portRange{val, val})
-				}
-			}
-			c.networkRules = append(c.networkRules, cr)
-		}
-	}
-
-	// FS
-	if grants.FS != nil {
-		for _, rule := range grants.FS.Rules {
-			cr := compiledFSRule{}
-			for _, r := range rule.Read {
-				if doublestar.ValidatePattern(r) {
-					cr.read = append(cr.read, r)
-				}
-			}
-			for _, w := range rule.Write {
-				if doublestar.ValidatePattern(w) {
-					cr.write = append(cr.write, w)
-				}
-			}
-			c.fsRules = append(c.fsRules, cr)
-		}
-	}
-
-	// Env
-	if grants.Env != nil {
-		for _, v := range grants.Env.Variables {
-			if doublestar.ValidatePattern(v) {
-				c.env = append(c.env, v)
-			}
-		}
-	}
-
-	// Exec
-	if grants.Exec != nil {
-		for _, cmd := range grants.Exec.Commands {
-			if doublestar.ValidatePattern(cmd) {
-				c.exec = append(c.exec, cmd)
-			}
-		}
-	}
-
-	// KV
-	if grants.KV != nil {
-		for _, rule := range grants.KV.Rules {
-			cr := compiledKVRule{op: rule.Operation}
-			for _, k := range rule.Keys {
-				if doublestar.ValidatePattern(k) {
-					cr.keys = append(cr.keys, k)
-				}
-			}
-			c.kvRules = append(c.kvRules, cr)
-		}
+	c := &compiledGrantSet{
+		networkRules: compileNetworkRules(grants.Network),
+		fsRules:      compileFSRules(grants.FS),
+		env:          compileEnv(grants.Env),
+		exec:         compileExec(grants.Exec),
+		kvRules:      compileKVRules(grants.KV),
 	}
 
 	p.cache.Store(grants, c)
 	return c
+}
+
+func compileNetworkRules(network *entities.NetworkCapability) []compiledNetworkRule {
+	if network == nil {
+		return nil
+	}
+	var rules []compiledNetworkRule
+	for _, rule := range network.Rules {
+		cr := compiledNetworkRule{
+			hosts: compilePatterns(rule.Hosts),
+			ports: compilePorts(rule.Ports),
+		}
+		rules = append(rules, cr)
+	}
+	return rules
+}
+
+func compilePorts(ports []string) []portRange {
+	var ranges []portRange
+	for _, portStr := range ports {
+		if portStr == "*" {
+			ranges = append(ranges, portRange{0, 65535})
+			continue
+		}
+		if strings.Contains(portStr, "-") {
+			parts := strings.Split(portStr, "-")
+			if len(parts) == 2 {
+				minPort, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
+				maxPort, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+				ranges = append(ranges, portRange{minPort, maxPort})
+			}
+		} else {
+			val, _ := strconv.Atoi(strings.TrimSpace(portStr))
+			ranges = append(ranges, portRange{val, val})
+		}
+	}
+	return ranges
+}
+
+func compileFSRules(fs *entities.FileSystemCapability) []compiledFSRule {
+	if fs == nil {
+		return nil
+	}
+	var rules []compiledFSRule
+	for _, rule := range fs.Rules {
+		cr := compiledFSRule{
+			read:  compilePatterns(rule.Read),
+			write: compilePatterns(rule.Write),
+		}
+		rules = append(rules, cr)
+	}
+	return rules
+}
+
+func compileEnv(env *entities.EnvironmentCapability) []string {
+	if env == nil {
+		return nil
+	}
+	return compilePatterns(env.Variables)
+}
+
+func compileExec(exec *entities.ExecCapability) []string {
+	if exec == nil {
+		return nil
+	}
+	return compilePatterns(exec.Commands)
+}
+
+func compileKVRules(kv *entities.KeyValueCapability) []compiledKVRule {
+	if kv == nil {
+		return nil
+	}
+	var rules []compiledKVRule
+	for _, rule := range kv.Rules {
+		cr := compiledKVRule{
+			op:   rule.Operation,
+			keys: compilePatterns(rule.Keys),
+		}
+		rules = append(rules, cr)
+	}
+	return rules
+}
+
+func compilePatterns(patterns []string) []string {
+	var valid []string
+	for _, p := range patterns {
+		if doublestar.ValidatePattern(p) {
+			valid = append(valid, p)
+		}
+	}
+	return valid
 }
 
 func (p *Policy) CheckNetwork(req entities.NetworkRequest, grants *entities.GrantSet) bool {
@@ -246,9 +264,10 @@ func (p *Policy) CheckFileSystem(req entities.FileSystemRequest, grants *entitie
 
 	for _, rule := range c.fsRules {
 		var patterns []string
-		if req.Operation == "read" {
+		switch req.Operation {
+		case "read":
 			patterns = rule.read
-		} else if req.Operation == "write" {
+		case "write":
 			patterns = rule.write
 		}
 
@@ -308,13 +327,14 @@ func (p *Policy) CheckKeyValue(req entities.KeyValueRequest, grants *entities.Gr
 	// Check each KV rule
 	for _, rule := range c.kvRules {
 		// Check operation
-		allowedOp := false
-		if rule.op == "read-write" {
+		var allowedOp bool
+		switch rule.op {
+		case "read-write":
 			allowedOp = true
-		} else if rule.op == "read" && req.Operation == "read" {
-			allowedOp = true
-		} else if rule.op == "write" && req.Operation == "write" {
-			allowedOp = true
+		case "read":
+			allowedOp = req.Operation == "read"
+		case "write":
+			allowedOp = req.Operation == "write"
 		}
 
 		if !allowedOp {

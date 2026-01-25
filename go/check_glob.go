@@ -1,9 +1,11 @@
 package main
+
 import (
-    "fmt"
-    "github.com/gobwas/glob"
+	"fmt"
+	"github.com/gobwas/glob"
 )
+
 func main() {
-    g, _ := glob.Compile("*")
-    fmt.Printf("%T\n", g)
+	g, _ := glob.Compile("*")
+	fmt.Printf("%T\n", g)
 }

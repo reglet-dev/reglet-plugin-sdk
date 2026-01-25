@@ -37,44 +37,59 @@ func (g *GrantSet) Merge(other *GrantSet) {
 	if other == nil {
 		return
 	}
+	g.mergeNetwork(other.Network)
+	g.mergeFS(other.FS)
+	g.mergeEnv(other.Env)
+	g.mergeExec(other.Exec)
+	g.mergeKV(other.KV)
+}
 
-	// Merge Network
-	if other.Network != nil && len(other.Network.Rules) > 0 {
-		if g.Network == nil {
-			g.Network = &NetworkCapability{}
-		}
-		g.Network.Rules = append(g.Network.Rules, other.Network.Rules...)
+func (g *GrantSet) mergeNetwork(other *NetworkCapability) {
+	if other == nil || len(other.Rules) == 0 {
+		return
 	}
+	if g.Network == nil {
+		g.Network = &NetworkCapability{}
+	}
+	g.Network.Rules = append(g.Network.Rules, other.Rules...)
+}
 
-	// Merge FS
-	if other.FS != nil && len(other.FS.Rules) > 0 {
-		if g.FS == nil {
-			g.FS = &FileSystemCapability{}
-		}
-		g.FS.Rules = append(g.FS.Rules, other.FS.Rules...)
+func (g *GrantSet) mergeFS(other *FileSystemCapability) {
+	if other == nil || len(other.Rules) == 0 {
+		return
 	}
+	if g.FS == nil {
+		g.FS = &FileSystemCapability{}
+	}
+	g.FS.Rules = append(g.FS.Rules, other.Rules...)
+}
 
-	// Merge Env
-	if other.Env != nil && len(other.Env.Variables) > 0 {
-		if g.Env == nil {
-			g.Env = &EnvironmentCapability{}
-		}
-		g.Env.Variables = append(g.Env.Variables, other.Env.Variables...)
+func (g *GrantSet) mergeEnv(other *EnvironmentCapability) {
+	if other == nil || len(other.Variables) == 0 {
+		return
 	}
+	if g.Env == nil {
+		g.Env = &EnvironmentCapability{}
+	}
+	g.Env.Variables = append(g.Env.Variables, other.Variables...)
+}
 
-	// Merge Exec
-	if other.Exec != nil && len(other.Exec.Commands) > 0 {
-		if g.Exec == nil {
-			g.Exec = &ExecCapability{}
-		}
-		g.Exec.Commands = append(g.Exec.Commands, other.Exec.Commands...)
+func (g *GrantSet) mergeExec(other *ExecCapability) {
+	if other == nil || len(other.Commands) == 0 {
+		return
 	}
+	if g.Exec == nil {
+		g.Exec = &ExecCapability{}
+	}
+	g.Exec.Commands = append(g.Exec.Commands, other.Commands...)
+}
 
-	// Merge KV
-	if other.KV != nil && len(other.KV.Rules) > 0 {
-		if g.KV == nil {
-			g.KV = &KeyValueCapability{}
-		}
-		g.KV.Rules = append(g.KV.Rules, other.KV.Rules...)
+func (g *GrantSet) mergeKV(other *KeyValueCapability) {
+	if other == nil || len(other.Rules) == 0 {
+		return
 	}
+	if g.KV == nil {
+		g.KV = &KeyValueCapability{}
+	}
+	g.KV.Rules = append(g.KV.Rules, other.Rules...)
 }

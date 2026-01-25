@@ -9,9 +9,9 @@ import (
 
 // ManifestExtractor extracts capabilities from a plugin manifest.
 type ManifestExtractor struct {
-	manifest []byte
 	parser   ports.ManifestParser
 	renderer ports.TemplateEngine
+	manifest []byte
 }
 
 // ManifestExtractorOption configures the ManifestExtractor.

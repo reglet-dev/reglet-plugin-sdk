@@ -39,7 +39,7 @@ func TestManifestExtractor_Extract(t *testing.T) {
 				},
 			},
 		}
-		
+
 		parser := &mockParser{
 			manifest: &entities.PluginManifest{
 				Capabilities: expectedCaps,
@@ -108,27 +108,27 @@ func TestManifestExtractor_Extract(t *testing.T) {
 		assert.NotNil(t, caps)
 		assert.True(t, caps.IsEmpty())
 	})
-	
+
 	t.Run("should use renderer before parsing", func(t *testing.T) {
 		expectedCaps := &entities.GrantSet{}
-		
+
 		// Renderer returns specific output
 		renderer := &mockRenderer{
 			output: []byte("rendered output"),
 		}
-		
+
 		// Parser expects that specific output
 		parser := &mockParser{
 			manifest: &entities.PluginManifest{Capabilities: expectedCaps},
 		}
-		
+
 		ext := extractor.NewManifestExtractor(
 			[]byte("template"),
 			extractor.WithParser(parser),
 			extractor.WithTemplateEngine(renderer),
 		)
-		
-		// We can't easily verify the call arguments with this simple mock, 
+
+		// We can't easily verify the call arguments with this simple mock,
 		// but we can verify the flow doesn't error and uses both components.
 		caps, err := ext.Extract(map[string]interface{}{"foo": "bar"})
 		require.NoError(t, err)
