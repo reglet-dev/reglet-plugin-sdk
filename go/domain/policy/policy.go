@@ -299,7 +299,7 @@ func (p *Policy) CheckEnvironment(req entities.EnvironmentRequest, grants *entit
 	return false
 }
 
-func (p *Policy) CheckExec(req entities.ExecRequest, grants *entities.GrantSet) bool {
+func (p *Policy) CheckExec(req entities.ExecCapabilityRequest, grants *entities.GrantSet) bool {
 	c := p.getCompiled(grants)
 	if c == nil {
 		p.config.denialHandler.OnDenial("exec", req, "no grants")

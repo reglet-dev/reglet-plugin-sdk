@@ -173,7 +173,7 @@ func (c *CapabilityChecker) parseEnvironmentPattern(pattern string, grants *enti
 
 // parseExecPattern parses WASM protocol exec command patterns.
 func (c *CapabilityChecker) parseExecPattern(pattern string, grants *entities.GrantSet) bool {
-	req := entities.ExecRequest{
+	req := entities.ExecCapabilityRequest{
 		Command: pattern,
 	}
 
@@ -223,7 +223,7 @@ func (c *CapabilityChecker) CheckEnvironment(pluginName string, req entities.Env
 }
 
 // CheckExec performs typed exec capability check.
-func (c *CapabilityChecker) CheckExec(pluginName string, req entities.ExecRequest) error {
+func (c *CapabilityChecker) CheckExec(pluginName string, req entities.ExecCapabilityRequest) error {
 	grants, ok := c.grantedCapabilities[pluginName]
 	if !ok || grants == nil {
 		return fmt.Errorf("no capabilities granted to plugin %s", pluginName)

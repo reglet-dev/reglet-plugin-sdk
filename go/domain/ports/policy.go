@@ -7,6 +7,6 @@ type Policy interface {
 	CheckNetwork(req entities.NetworkRequest, grants *entities.GrantSet) bool
 	CheckFileSystem(req entities.FileSystemRequest, grants *entities.GrantSet) bool
 	CheckEnvironment(req entities.EnvironmentRequest, grants *entities.GrantSet) bool
-	CheckExec(req entities.ExecRequest, grants *entities.GrantSet) bool
+	CheckExec(req entities.ExecCapabilityRequest, grants *entities.GrantSet) bool
 	CheckKeyValue(req entities.KeyValueRequest, grants *entities.GrantSet) bool
 }

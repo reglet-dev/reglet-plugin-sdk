@@ -27,7 +27,7 @@ func NewExecAdapter() *ExecAdapter {
 // Run executes a command on the host system.
 func (a *ExecAdapter) Run(ctx context.Context, req ports.CommandRequest) (*ports.CommandResult, error) {
 	// 1. Prepare wire request with context
-	wireReq := entities.WireExecRequest{
+	wireReq := entities.ExecRequest{
 		Context: wasmcontext.ContextToWire(ctx),
 		Command: req.Command,
 		Args:    req.Args,

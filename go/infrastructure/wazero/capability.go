@@ -27,7 +27,7 @@ type CapabilityChecker interface {
 	CheckEnvironment(pluginName string, req entities.EnvironmentRequest) error
 
 	// CheckExec validates command execution.
-	CheckExec(pluginName string, req entities.ExecRequest) error
+	CheckExec(pluginName string, req entities.ExecCapabilityRequest) error
 }
 
 // CapabilityMiddlewareConfig configures capability checking for host functions.

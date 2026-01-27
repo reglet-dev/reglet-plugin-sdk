@@ -158,8 +158,8 @@ func TestPolicy_CheckExec(t *testing.T) {
 		},
 	}
 
-	assert.True(t, p.CheckExec(entities.ExecRequest{Command: "/usr/bin/ls"}, grants))
-	assert.False(t, p.CheckExec(entities.ExecRequest{Command: "/bin/sh"}, grants))
+	assert.True(t, p.CheckExec(entities.ExecCapabilityRequest{Command: "/usr/bin/ls"}, grants))
+	assert.False(t, p.CheckExec(entities.ExecCapabilityRequest{Command: "/bin/sh"}, grants))
 }
 
 func TestPolicy_CheckKeyValue(t *testing.T) {

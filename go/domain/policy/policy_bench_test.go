@@ -69,7 +69,7 @@ func BenchmarkCheckExec(b *testing.B) {
 			Commands: []string{"/usr/bin/*", "/opt/tools/**"},
 		},
 	}
-	req := entities.ExecRequest{Command: "/usr/bin/ls"}
+	req := entities.ExecCapabilityRequest{Command: "/usr/bin/ls"}
 
 	b.ReportAllocs()
 	b.ResetTimer()

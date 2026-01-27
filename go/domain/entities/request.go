@@ -17,8 +17,8 @@ type EnvironmentRequest struct {
 	Variable string
 }
 
-// ExecRequest represents a runtime request to execute a command.
-type ExecRequest struct {
+// ExecCapabilityRequest represents a runtime request to execute a command.
+type ExecCapabilityRequest struct {
 	Command string
 }
 
