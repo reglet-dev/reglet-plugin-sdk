@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/reglet-dev/reglet-sdk/go/application/config"
 	"github.com/reglet-dev/reglet-sdk/go/domain/ports"
@@ -21,13 +22,55 @@ func (m *MockTCPConnection) Close() error {
 	args := m.Called()
 	return args.Error(0)
 }
+
 func (m *MockTCPConnection) RemoteAddr() string {
 	args := m.Called()
 	return args.String(0)
 }
+
 func (m *MockTCPConnection) IsConnected() bool {
 	args := m.Called()
 	return args.Bool(0)
+}
+
+func (m *MockTCPConnection) LocalAddr() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockTCPConnection) IsTLS() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
+func (m *MockTCPConnection) TLSVersion() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockTCPConnection) TLSCipherSuite() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockTCPConnection) TLSServerName() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockTCPConnection) TLSCertSubject() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockTCPConnection) TLSCertIssuer() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockTCPConnection) TLSCertNotAfter() *time.Time {
+	args := m.Called()
+	return args.Get(0).(*time.Time)
 }
 
 // MockTCPDialer
@@ -42,8 +85,17 @@ func (m *MockTCPDialer) Dial(ctx context.Context, address string) (ports.TCPConn
 	}
 	return args.Get(0).(ports.TCPConnection), args.Error(1)
 }
+
 func (m *MockTCPDialer) DialWithTimeout(ctx context.Context, address string, timeoutMs int) (ports.TCPConnection, error) {
 	args := m.Called(ctx, address, timeoutMs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.TCPConnection), args.Error(1)
+}
+
+func (m *MockTCPDialer) DialSecure(ctx context.Context, address string, timeoutMs int, tls bool) (ports.TCPConnection, error) {
+	args := m.Called(ctx, address, timeoutMs, tls)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -99,10 +151,11 @@ func TestRunTCPCheck_WithMockDialer_Success(t *testing.T) {
 	mockConn.On("Close").Return(nil)
 	mockConn.On("IsConnected").Return(true)
 	mockConn.On("RemoteAddr").Return("1.2.3.4:443")
+	mockConn.On("LocalAddr").Return("127.0.0.1:5678")
+	mockConn.On("IsTLS").Return(false)
 
-	// Expect DialWithTimeout with correct args
-	// Note: timeout is default 5000 from defaultTCPCheckConfig/RunTCPCheck logic
-	mockDialer.On("DialWithTimeout", mock.Anything, "google.com:443", 5000).Return(mockConn, nil)
+	// Expect DialSecure with correct args (tls=false by default)
+	mockDialer.On("DialSecure", mock.Anything, "google.com:443", 5000, false).Return(mockConn, nil)
 
 	cfg := config.Config{"host": "google.com", "port": 443}
 
@@ -122,7 +175,8 @@ func TestRunTCPCheck_WithMockDialer_ConnectionFailed(t *testing.T) {
 	mockDialer := new(MockTCPDialer)
 
 	// Simulate connection error
-	mockDialer.On("DialWithTimeout", mock.Anything, "example.com:80", 5000).Return(nil, errors.New("timeout"))
+	// Simulate connection error
+	mockDialer.On("DialSecure", mock.Anything, "example.com:80", 5000, false).Return(nil, errors.New("timeout"))
 
 	cfg := config.Config{"host": "example.com", "port": 80}
 
@@ -137,11 +191,9 @@ func TestRunTCPCheck_WithMockDialer_ConnectionFailed(t *testing.T) {
 	assert.Contains(t, result.Error.Message, "timeout")
 
 	mockDialer.AssertExpectations(t)
-
 }
 
 func TestRunTCPCheck_DefaultClient_PanicsOnNative(t *testing.T) {
-
 	// This test confirms that without a mock, the code tries to use the WASM adapter
 
 	// which panics on native builds (via the stub).
@@ -149,9 +201,6 @@ func TestRunTCPCheck_DefaultClient_PanicsOnNative(t *testing.T) {
 	cfg := config.Config{"host": "example.com", "port": 80}
 
 	assert.PanicsWithValue(t, "WASM TCP adapter not available in native build. Use WithTCPDialer() to inject a mock.", func() {
-
 		_, _ = RunTCPCheck(context.Background(), cfg)
-
 	})
-
 }

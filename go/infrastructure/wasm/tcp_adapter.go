@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
 	"github.com/reglet-dev/reglet-sdk/go/domain/ports"
@@ -27,11 +28,16 @@ func NewTCPAdapter() *TCPAdapter {
 
 // Dial establishes a TCP connection to the given address.
 func (a *TCPAdapter) Dial(ctx context.Context, address string) (ports.TCPConnection, error) {
-	return a.DialWithTimeout(ctx, address, 5000) // Default 5s timeout
+	return a.DialSecure(ctx, address, 5000, false) // Default 5s timeout, no TLS
 }
 
 // DialWithTimeout establishes a TCP connection with a timeout.
 func (a *TCPAdapter) DialWithTimeout(ctx context.Context, address string, timeoutMs int) (ports.TCPConnection, error) {
+	return a.DialSecure(ctx, address, timeoutMs, false)
+}
+
+// DialSecure establishes a TCP connection with timeout and optional TLS.
+func (a *TCPAdapter) DialSecure(ctx context.Context, address string, timeoutMs int, tls bool) (ports.TCPConnection, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, fmt.Errorf("invalid address: %w", err)
@@ -42,7 +48,7 @@ func (a *TCPAdapter) DialWithTimeout(ctx context.Context, address string, timeou
 		Host:      host,
 		Port:      port,
 		TimeoutMs: timeoutMs,
-		TLS:       false, // Default to false as ports.TCPDialer interface implies raw TCP
+		TLS:       tls,
 	}
 
 	requestBytes, err := json.Marshal(request)
@@ -88,4 +94,36 @@ func (c *WasmTCPConnection) RemoteAddr() string {
 
 func (c *WasmTCPConnection) IsConnected() bool {
 	return c.response.Connected
+}
+
+func (c *WasmTCPConnection) LocalAddr() string {
+	return c.response.LocalAddr
+}
+
+func (c *WasmTCPConnection) IsTLS() bool {
+	return c.response.TLS
+}
+
+func (c *WasmTCPConnection) TLSVersion() string {
+	return c.response.TLSVersion
+}
+
+func (c *WasmTCPConnection) TLSCipherSuite() string {
+	return c.response.TLSCipherSuite
+}
+
+func (c *WasmTCPConnection) TLSServerName() string {
+	return c.response.TLSServerName
+}
+
+func (c *WasmTCPConnection) TLSCertSubject() string {
+	return c.response.TLSCertSubject
+}
+
+func (c *WasmTCPConnection) TLSCertIssuer() string {
+	return c.response.TLSCertIssuer
+}
+
+func (c *WasmTCPConnection) TLSCertNotAfter() *time.Time {
+	return c.response.TLSCertNotAfter
 }

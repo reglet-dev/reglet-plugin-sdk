@@ -67,6 +67,10 @@ func RunTCPCheck(ctx context.Context, cfg config.Config, opts ...TCPCheckOption)
 	// Parse optional timeout
 	timeoutMs := config.GetIntDefault(cfg, "timeout_ms", 5000)
 
+	// Parse TLS config
+	tls := config.GetBoolDefault(cfg, "tls", false)
+	_ = config.GetStringDefault(cfg, "expected_tls_version", "") // Parsed but unused in core check, plugins may use it
+
 	// Configure check
 	checkCfg := defaultTCPCheckConfig()
 	for _, opt := range opts {
@@ -77,7 +81,7 @@ func RunTCPCheck(ctx context.Context, cfg config.Config, opts ...TCPCheckOption)
 
 	// Execute TCP connect
 	start := time.Now()
-	conn, err := checkCfg.dialer.DialWithTimeout(ctx, address, timeoutMs)
+	conn, err := checkCfg.dialer.DialSecure(ctx, address, timeoutMs, tls)
 	latency := time.Since(start)
 
 	// Create metadata
@@ -98,10 +102,30 @@ func RunTCPCheck(ctx context.Context, cfg config.Config, opts ...TCPCheckOption)
 	resultData := map[string]any{
 		"connected":  conn.IsConnected(),
 		"latency_ms": latency.Milliseconds(),
+		"address":    address,
 	}
 
 	if conn.RemoteAddr() != "" {
 		resultData["remote_addr"] = conn.RemoteAddr()
+	}
+
+	if conn.LocalAddr() != "" {
+		resultData["local_addr"] = conn.LocalAddr()
+	}
+
+	if conn.IsTLS() {
+		resultData["tls"] = true
+		resultData["tls_version"] = conn.TLSVersion()
+		resultData["tls_cipher_suite"] = conn.TLSCipherSuite()
+		resultData["tls_server_name"] = conn.TLSServerName()
+		if conn.TLSCertSubject() != "" {
+			resultData["tls_cert_subject"] = conn.TLSCertSubject()
+			resultData["tls_cert_issuer"] = conn.TLSCertIssuer()
+		}
+		if notAfter := conn.TLSCertNotAfter(); notAfter != nil {
+			resultData["tls_cert_not_after"] = notAfter.Format(time.RFC3339)
+			resultData["tls_cert_days_remaining"] = int(time.Until(*notAfter).Hours() / 24)
+		}
 	}
 
 	if conn.IsConnected() {

@@ -29,3 +29,8 @@ func (a *TCPAdapter) Dial(ctx context.Context, address string) (ports.TCPConnect
 func (a *TCPAdapter) DialWithTimeout(ctx context.Context, address string, timeoutMs int) (ports.TCPConnection, error) {
 	panic("WASM TCP adapter not available in native build. Use WithTCPDialer() to inject a mock.")
 }
+
+// DialSecure panics because real WASM calls are not supported natively.
+func (a *TCPAdapter) DialSecure(ctx context.Context, address string, timeoutMs int, tls bool) (ports.TCPConnection, error) {
+	panic("WASM TCP adapter not available in native build. Use WithTCPDialer() to inject a mock.")
+}

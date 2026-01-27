@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,6 +14,7 @@ import (
 type MockTCPDialer struct {
 	DialFunc            func(ctx context.Context, address string) (TCPConnection, error)
 	DialWithTimeoutFunc func(ctx context.Context, address string, timeoutMs int) (TCPConnection, error)
+	DialSecureFunc      func(ctx context.Context, address string, timeoutMs int, tls bool) (TCPConnection, error)
 }
 
 func (m *MockTCPDialer) Dial(ctx context.Context, address string) (TCPConnection, error) {
@@ -25,6 +27,13 @@ func (m *MockTCPDialer) Dial(ctx context.Context, address string) (TCPConnection
 func (m *MockTCPDialer) DialWithTimeout(ctx context.Context, address string, timeoutMs int) (TCPConnection, error) {
 	if m.DialWithTimeoutFunc != nil {
 		return m.DialWithTimeoutFunc(ctx, address, timeoutMs)
+	}
+	return &mockTCPConn{connected: true, addr: address}, nil
+}
+
+func (m *MockTCPDialer) DialSecure(ctx context.Context, address string, timeoutMs int, tls bool) (TCPConnection, error) {
+	if m.DialSecureFunc != nil {
+		return m.DialSecureFunc(ctx, address, timeoutMs, tls)
 	}
 	return &mockTCPConn{connected: true, addr: address}, nil
 }
@@ -48,6 +57,38 @@ func (m *mockTCPConn) RemoteAddr() string {
 
 func (m *mockTCPConn) IsConnected() bool {
 	return m.connected && !m.closed
+}
+
+func (m *mockTCPConn) LocalAddr() string {
+	return "127.0.0.1:0"
+}
+
+func (m *mockTCPConn) IsTLS() bool {
+	return false
+}
+
+func (m *mockTCPConn) TLSVersion() string {
+	return ""
+}
+
+func (m *mockTCPConn) TLSCipherSuite() string {
+	return ""
+}
+
+func (m *mockTCPConn) TLSServerName() string {
+	return ""
+}
+
+func (m *mockTCPConn) TLSCertSubject() string {
+	return ""
+}
+
+func (m *mockTCPConn) TLSCertIssuer() string {
+	return ""
+}
+
+func (m *mockTCPConn) TLSCertNotAfter() *time.Time {
+	return nil
 }
 
 // Compile-time interface check
