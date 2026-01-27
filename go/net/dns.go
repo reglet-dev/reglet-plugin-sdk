@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/reglet-dev/reglet-sdk/go/application/config"
@@ -76,10 +77,12 @@ func RunDNSCheck(ctx context.Context, cfg config.Config, opts ...DNSCheckOption)
 	// Execute DNS lookup based on record type
 	start := time.Now()
 	records, mxRecords, lookupErr := performDNSLookup(ctx, checkCfg.resolver, hostname, recordType)
+	latency := time.Since(start)
 	metadata := entities.NewRunMetadata(start, time.Now())
 
 	// Build result data
 	resultData := make(map[string]any)
+	resultData["query_time_ms"] = latency.Milliseconds()
 
 	if len(records) > 0 {
 		resultData["records"] = records
@@ -95,6 +98,7 @@ func RunDNSCheck(ctx context.Context, cfg config.Config, opts ...DNSCheckOption)
 		}
 		resultData["mx_records"] = mxMap
 	}
+	resultData["record_count"] = len(records) + len(mxRecords)
 	resultData["record_type"] = recordType
 	resultData["hostname"] = hostname
 
@@ -105,8 +109,17 @@ func RunDNSCheck(ctx context.Context, cfg config.Config, opts ...DNSCheckOption)
 	}
 
 	// Lookup failed
+	// specific flags for timeout and not found
+	isTimeout := strings.Contains(lookupErr.Error(), "timeout") || strings.Contains(lookupErr.Error(), "deadline exceeded")
+	isNotFound := strings.Contains(lookupErr.Error(), "no such host") || strings.Contains(lookupErr.Error(), "not found")
+
+	resultData["is_timeout"] = isTimeout
+	resultData["is_not_found"] = isNotFound
+
 	errDetail := entities.NewErrorDetail("network", lookupErr.Error()).WithCode("LOOKUP_FAILED")
-	return entities.ResultError(errDetail).WithMetadata(metadata), nil
+	res := entities.ResultError(errDetail).WithMetadata(metadata)
+	res.Data = resultData
+	return res, nil
 }
 
 func performDNSLookup(ctx context.Context, resolver ports.DNSResolver, hostname, recordType string) ([]string, []ports.MXRecord, error) {
