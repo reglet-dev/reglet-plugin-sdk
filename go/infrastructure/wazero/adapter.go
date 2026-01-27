@@ -16,13 +16,13 @@ type AdapterConfig struct {
 	// ModuleName is the host module name (default: "reglet_host").
 	ModuleName string
 
-	// MaxRequestSize limits the size of incoming requests from guest memory.
-	// Default is 1MB.
-	MaxRequestSize uint32
-
 	// CustomHandlers allows adding additional wazero-specific handlers that
 	// don't fit the standard ByteHandler pattern (e.g., log_message with no return).
 	CustomHandlers []CustomHandler
+
+	// MaxRequestSize limits the size of incoming requests from guest memory.
+	// Default is 1MB.
+	MaxRequestSize uint32
 }
 
 // CustomHandler represents a custom wazero handler that doesn't use the standard
@@ -196,7 +196,7 @@ func packPtrLen(ptr, length uint32) uint64 {
 
 // unpackPtrLen unpacks a pointer and length from a packed i64.
 func unpackPtrLen(packed uint64) (ptr, length uint32) {
-	ptr = uint32(packed >> 32)    //nolint:gosec // G115: Packed format stores 32-bit values
+	ptr = uint32(packed >> 32)           //nolint:gosec // G115: Packed format stores 32-bit values
 	length = uint32(packed & 0xFFFFFFFF) //nolint:gosec // G115: Packed format stores 32-bit values
 	return ptr, length
 }

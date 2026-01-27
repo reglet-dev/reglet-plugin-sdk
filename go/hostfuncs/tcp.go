@@ -11,6 +11,11 @@ import (
 
 // TCPConnectRequest contains parameters for a TCP connection test.
 type TCPConnectRequest struct {
+	// TLSConfig is an optional custom TLS configuration.
+	// This field is not marshaled to JSON and is intended for internal use
+	// or when calling PerformTCPConnect directly from Go code.
+	TLSConfig *tls.Config `json:"-"`
+
 	// Host is the target hostname or IP address.
 	Host string `json:"host"`
 
@@ -22,11 +27,6 @@ type TCPConnectRequest struct {
 
 	// UseTLS indicates whether to use TLS for the connection.
 	UseTLS bool `json:"use_tls,omitempty"`
-
-	// TLSConfig is an optional custom TLS configuration.
-	// This field is not marshaled to JSON and is intended for internal use
-	// or when calling PerformTCPConnect directly from Go code.
-	TLSConfig *tls.Config `json:"-"`
 }
 
 // TCPConnectResponse contains the result of a TCP connection test.
@@ -36,12 +36,6 @@ type TCPConnectResponse struct {
 
 	// RemoteAddr is the resolved remote address if connected.
 	RemoteAddr string `json:"remote_addr,omitempty"`
-
-	// LatencyMs is the connection latency in milliseconds.
-	LatencyMs int64 `json:"latency_ms,omitempty"`
-
-	// Connected indicates whether the connection was successful.
-	Connected bool `json:"connected"`
 
 	// TLSVersion is the TLS version used (e.g. "TLS 1.2").
 	TLSVersion string `json:"tls_version,omitempty"`
@@ -60,6 +54,10 @@ type TCPConnectResponse struct {
 
 	// TLSCertExpiry is the expiration time of the peer certificate.
 	TLSCertExpiry string `json:"tls_cert_expiry,omitempty"`
+	// LatencyMs is the connection latency in milliseconds.
+	LatencyMs int64 `json:"latency_ms,omitempty"`
+	// Connected indicates whether the connection was successful.
+	Connected bool `json:"connected"`
 }
 
 // TCPError represents a TCP connection error.

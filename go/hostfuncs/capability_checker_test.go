@@ -39,9 +39,9 @@ func TestCapabilityChecker_ExecCapability(t *testing.T) {
 	checker := NewCapabilityChecker(grants)
 
 	tests := []struct {
-		name       string
-		command    string
-		wantErr    bool
+		name    string
+		command string
+		wantErr bool
 	}{
 		{"allowed command", "ls", false},
 		{"allowed command 2", "cat", false},

@@ -68,11 +68,11 @@ func (e *ExecError) Error() string {
 type ExecOption func(*execConfig)
 
 type execConfig struct {
+	capabilityCheck CapabilityGetter
+	pluginName      string
 	timeout         time.Duration
 	maxOutputSize   int
 	sanitizeEnv     bool
-	pluginName      string
-	capabilityCheck CapabilityGetter
 	isolateEnv      bool
 }
 

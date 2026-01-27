@@ -29,7 +29,7 @@ type HTTPRequest struct {
 // HTTPResponse represents an HTTP response.
 type HTTPResponse struct {
 	Headers    map[string][]string
+	Proto      string
 	Body       []byte
-	Proto      string // e.g. "HTTP/1.1"
 	StatusCode int
 }

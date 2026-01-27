@@ -43,12 +43,12 @@ type CapabilityMiddlewareConfig struct {
 
 // CapabilityRequirement specifies the capability needed for a function.
 type CapabilityRequirement struct {
-	// Kind is the capability type (e.g., "network", "exec").
-	Kind string
-
 	// PatternExtractor extracts the capability pattern from the request.
 	// For example, for http_request, it might extract the target host.
 	PatternExtractor func(request []byte) (string, error)
+
+	// Kind is the capability type (e.g., "network", "exec").
+	Kind string
 }
 
 // WithCapabilityMiddleware creates a middleware that checks capabilities
