@@ -1,9 +1,9 @@
 package hostfuncs
 
 import (
-	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os/exec"
 	"time"
 )
@@ -45,6 +45,12 @@ type ExecCommandResponse struct {
 
 	// IsTimeout indicates if the command timed out.
 	IsTimeout bool `json:"is_timeout,omitempty"`
+
+	// StdoutTruncated indicates if stdout was truncated due to size limits.
+	StdoutTruncated bool `json:"stdout_truncated,omitempty"`
+
+	// StderrTruncated indicates if stderr was truncated due to size limits.
+	StderrTruncated bool `json:"stderr_truncated,omitempty"`
 }
 
 // ExecError represents an execution error.
@@ -62,12 +68,20 @@ func (e *ExecError) Error() string {
 type ExecOption func(*execConfig)
 
 type execConfig struct {
-	timeout time.Duration
+	timeout         time.Duration
+	maxOutputSize   int
+	sanitizeEnv     bool
+	pluginName      string
+	capabilityCheck CapabilityGetter
+	isolateEnv      bool
 }
 
 func defaultExecConfig() execConfig {
 	return execConfig{
-		timeout: 30 * time.Second,
+		timeout:       30 * time.Second,
+		maxOutputSize: DefaultMaxOutputSize,
+		sanitizeEnv:   false,
+		isolateEnv:    false,
 	}
 }
 
@@ -80,8 +94,42 @@ func WithExecTimeout(d time.Duration) ExecOption {
 	}
 }
 
+// WithMaxOutputSize sets the maximum output size for stdout/stderr.
+// If output exceeds this size, it will be truncated.
+func WithMaxOutputSize(size int) ExecOption {
+	return func(c *execConfig) {
+		if size > 0 {
+			c.maxOutputSize = size
+		}
+	}
+}
+
+// WithEnvSanitization enables environment variable sanitization.
+// This blocks dangerous environment variables like LD_PRELOAD and
+// requires explicit capabilities for sensitive variables like PATH.
+func WithEnvSanitization(pluginName string, capGetter CapabilityGetter) ExecOption {
+	return func(c *execConfig) {
+		c.sanitizeEnv = true
+		c.pluginName = pluginName
+		c.capabilityCheck = capGetter
+	}
+}
+
+// WithIsolatedEnv ensures the command runs with only explicitly provided
+// environment variables, preventing host environment leakage.
+func WithIsolatedEnv() ExecOption {
+	return func(c *execConfig) {
+		c.isolateEnv = true
+	}
+}
+
 // PerformExecCommand executes a command on the host.
 // This is a pure Go implementation with no WASM runtime dependencies.
+//
+// Security features can be enabled via options:
+//   - WithEnvSanitization: blocks dangerous environment variables
+//   - WithIsolatedEnv: prevents host environment leakage
+//   - WithMaxOutputSize: limits output to prevent OOM
 func PerformExecCommand(ctx context.Context, req ExecCommandRequest, opts ...ExecOption) ExecCommandResponse {
 	cfg := defaultExecConfig()
 	for _, opt := range opts {
@@ -102,36 +150,61 @@ func PerformExecCommand(ctx context.Context, req ExecCommandRequest, opts ...Exe
 		}
 	}
 
+	// Apply environment sanitization if enabled
+	env := req.Env
+	if cfg.sanitizeEnv {
+		env = SanitizeEnv(ctx, env, cfg.pluginName, cfg.capabilityCheck)
+	}
+
 	// Apply timeout to context
-	ctx, cancel := context.WithTimeout(ctx, cfg.timeout)
+	execCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
 	defer cancel()
 
 	//nolint:gosec // G204: Command execution is the purpose of this function
-	cmd := exec.CommandContext(ctx, req.Command, req.Args...)
+	cmd := exec.CommandContext(execCtx, req.Command, req.Args...)
 	if req.Dir != "" {
 		cmd.Dir = req.Dir
 	}
-	if len(req.Env) > 0 {
-		cmd.Env = req.Env
-	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Set environment - either sanitized env or isolated empty env
+	if len(env) > 0 {
+		cmd.Env = env
+	} else if cfg.isolateEnv {
+		// SECURITY: Explicitly set empty env to prevent host environment leakage
+		cmd.Env = []string{}
+	}
+	// If neither condition is met, cmd.Env remains nil which inherits host env
+
+	// Use bounded buffers to limit output size
+	stdout := NewBoundedBuffer(cfg.maxOutputSize)
+	stderr := NewBoundedBuffer(cfg.maxOutputSize)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	start := time.Now()
 	err := cmd.Run()
 	duration := time.Since(start)
 
 	resp := ExecCommandResponse{
-		Stdout:     stdout.String(),
-		Stderr:     stderr.String(),
-		DurationMs: duration.Milliseconds(),
+		Stdout:          stdout.String(),
+		Stderr:          stderr.String(),
+		DurationMs:      duration.Milliseconds(),
+		StdoutTruncated: stdout.Truncated,
+		StderrTruncated: stderr.Truncated,
+	}
+
+	// Log if output was truncated
+	if stdout.Truncated || stderr.Truncated {
+		slog.WarnContext(ctx, "command output truncated",
+			"command", req.Command,
+			"stdout_truncated", stdout.Truncated,
+			"stderr_truncated", stderr.Truncated,
+			"max_size", cfg.maxOutputSize)
 	}
 
 	if err != nil {
 		// Check for timeout
-		if ctx.Err() == context.DeadlineExceeded {
+		if execCtx.Err() == context.DeadlineExceeded {
 			resp.IsTimeout = true
 			resp.ExitCode = -1 // Conventional timeout code
 			return resp
@@ -154,4 +227,21 @@ func PerformExecCommand(ctx context.Context, req ExecCommandRequest, opts ...Exe
 
 	resp.ExitCode = 0
 	return resp
+}
+
+// PerformSecureExecCommand executes a command with full security features enabled.
+// This is a convenience function that enables all security features:
+//   - Environment sanitization
+//   - Isolated environment (no host env leakage)
+//   - Output size limiting
+//
+// Use this for executing commands from untrusted sources (e.g., WASM plugins).
+func PerformSecureExecCommand(ctx context.Context, req ExecCommandRequest, pluginName string, capGetter CapabilityGetter, opts ...ExecOption) ExecCommandResponse {
+	// Prepend security options before user options
+	securityOpts := []ExecOption{
+		WithEnvSanitization(pluginName, capGetter),
+		WithIsolatedEnv(),
+	}
+	allOpts := append(securityOpts, opts...)
+	return PerformExecCommand(ctx, req, allOpts...)
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -76,6 +77,8 @@ type httpConfig struct {
 	maxRedirects    int
 	maxBodySize     int64
 	followRedirects bool
+	ssrfProtection  bool
+	allowPrivate    bool
 }
 
 func defaultHTTPConfig() httpConfig {
@@ -120,6 +123,71 @@ func WithHTTPMaxBodySize(size int64) HTTPOption {
 			c.maxBodySize = size
 		}
 	}
+}
+
+// WithHTTPSSRFProtection enables DNS pinning and SSRF protection.
+// When enabled, each request resolves DNS once, validates the IP, and connects
+// directly to that IP (preventing DNS rebinding attacks).
+// Private/reserved IPs are blocked unless allowPrivate is true.
+func WithHTTPSSRFProtection(allowPrivate bool) HTTPOption {
+	return func(c *httpConfig) {
+		c.ssrfProtection = true
+		c.allowPrivate = allowPrivate
+	}
+}
+
+// dnsPinningTransport prevents DNS rebinding attacks by resolving DNS once,
+// validating the IP, and connecting directly to that IP.
+type dnsPinningTransport struct {
+	base         *http.Transport
+	allowPrivate bool
+}
+
+func (t *dnsPinningTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	hostname := req.URL.Hostname()
+
+	// Resolve and validate
+	var opts []NetfilterOption
+	if t.allowPrivate {
+		opts = append(opts, WithBlockPrivate(false), WithBlockLocalhost(false))
+	}
+	result := ValidateAddress(hostname, opts...)
+
+	if !result.Allowed {
+		return nil, fmt.Errorf("SSRF protection: %s", result.Reason)
+	}
+
+	resolvedIP := result.ResolvedIP
+	if resolvedIP == "" {
+		resolvedIP = hostname
+	}
+
+	// Determine port
+	port := req.URL.Port()
+	if port == "" {
+		if req.URL.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+
+	// Create transport pinned to resolved IP
+	pinnedTransport := t.base.Clone()
+	pinnedTransport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		targetAddr := net.JoinHostPort(resolvedIP, port)
+		return (&net.Dialer{}).DialContext(ctx, network, targetAddr)
+	}
+
+	// Preserve original hostname for TLS SNI
+	if req.URL.Scheme == "https" {
+		if pinnedTransport.TLSClientConfig == nil {
+			pinnedTransport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		pinnedTransport.TLSClientConfig.ServerName = hostname
+	}
+
+	return pinnedTransport.RoundTrip(req)
 }
 
 // PerformHTTPRequest performs an HTTP request.
@@ -220,8 +288,25 @@ func executeHTTPRequest(ctx context.Context, req HTTPRequest, cfg httpConfig) HT
 
 // createHTTPClient creates an HTTP client with the appropriate redirect policy.
 func createHTTPClient(cfg httpConfig) *http.Client {
+	transport := &http.Transport{
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	var rt http.RoundTripper = transport
+	if cfg.ssrfProtection {
+		rt = &dnsPinningTransport{
+			base:         transport,
+			allowPrivate: cfg.allowPrivate,
+		}
+	}
+
 	client := &http.Client{
-		Timeout: cfg.timeout,
+		Timeout:   cfg.timeout,
+		Transport: rt,
 	}
 
 	if !cfg.followRedirects {
@@ -252,6 +337,8 @@ func handleHTTPError(err error, ctx context.Context, latency time.Duration) HTTP
 		code = "HOST_NOT_FOUND"
 	case strings.Contains(err.Error(), "connection refused"):
 		code = "CONNECTION_REFUSED"
+	case strings.Contains(err.Error(), "SSRF protection"):
+		code = "SSRF_BLOCKED"
 	}
 
 	return HTTPResponse{

@@ -39,6 +39,12 @@ type SMTPConnectResponse struct {
 	// TLSVersion is the TLS version if TLS is used.
 	TLSVersion string `json:"tls_version,omitempty"`
 
+	// TLSCipherSuite is the cipher suite used for TLS.
+	TLSCipherSuite string `json:"tls_cipher_suite,omitempty"`
+
+	// TLSServerName is the server name used for TLS (SNI).
+	TLSServerName string `json:"tls_server_name,omitempty"`
+
 	// LatencyMs is the connection latency in milliseconds.
 	LatencyMs int64 `json:"latency_ms,omitempty"`
 
@@ -61,8 +67,10 @@ func (e *SMTPError) Error() string {
 type SMTPOption func(*smtpConfig)
 
 type smtpConfig struct {
-	tlsConfig *tls.Config
-	timeout   time.Duration
+	tlsConfig      *tls.Config
+	timeout        time.Duration
+	ssrfProtection bool
+	allowPrivate   bool
 }
 
 func defaultSMTPConfig() smtpConfig {
@@ -85,6 +93,16 @@ func WithSMTPTimeout(d time.Duration) SMTPOption {
 func WithSMTPTLSConfig(cfg *tls.Config) SMTPOption {
 	return func(c *smtpConfig) {
 		c.tlsConfig = cfg
+	}
+}
+
+// WithSMTPSSRFProtection enables SSRF protection.
+// When enabled, private/reserved IPs are blocked unless allowPrivate is true.
+// DNS is resolved once and the resolved IP is used for the connection (prevents DNS rebinding).
+func WithSMTPSSRFProtection(allowPrivate bool) SMTPOption {
+	return func(c *smtpConfig) {
+		c.ssrfProtection = true
+		c.allowPrivate = allowPrivate
 	}
 }
 
@@ -127,8 +145,35 @@ func PerformSMTPConnect(ctx context.Context, req SMTPConnectRequest, opts ...SMT
 		}
 	}
 
-	// Build address
-	address := fmt.Sprintf("%s:%d", req.Host, req.Port)
+	// SSRF Protection: validate and resolve address
+	originalHost := req.Host
+	resolvedHost := req.Host
+	if cfg.ssrfProtection {
+		addr := fmt.Sprintf("%s:%d", req.Host, req.Port)
+		var opts []NetfilterOption
+		if cfg.allowPrivate {
+			opts = append(opts, WithBlockPrivate(false), WithBlockLocalhost(false))
+		}
+		result := ValidateAddress(addr, opts...)
+
+		if !result.Allowed {
+			return SMTPConnectResponse{
+				Connected: false,
+				Error: &SMTPError{
+					Code:    "SSRF_BLOCKED",
+					Message: result.Reason,
+				},
+			}
+		}
+
+		// Use resolved IP for connection to prevent DNS rebinding
+		if result.ResolvedIP != "" {
+			resolvedHost = result.ResolvedIP
+		}
+	}
+
+	// Build address using resolved IP
+	address := fmt.Sprintf("%s:%d", resolvedHost, req.Port)
 
 	// Apply timeout to context
 	ctx, cancel := context.WithTimeout(ctx, cfg.timeout)
@@ -139,20 +184,22 @@ func PerformSMTPConnect(ctx context.Context, req SMTPConnectRequest, opts ...SMT
 	// Connect based on TLS mode
 	if req.UseTLS {
 		// Implicit TLS (typically port 465)
-		return connectWithTLS(ctx, address, req.Host, cfg, start)
+		return connectWithTLS(ctx, address, originalHost, cfg, start)
 	}
 
 	// Plain connection (may upgrade via STARTTLS)
-	return connectPlain(ctx, address, req.Host, req.UseSTARTTLS, cfg, start)
+	return connectPlain(ctx, address, originalHost, req.UseSTARTTLS, cfg, start)
 }
 
 func connectWithTLS(ctx context.Context, address, host string, cfg smtpConfig, start time.Time) SMTPConnectResponse {
 	tlsConfig := cfg.tlsConfig
 	if tlsConfig == nil {
 		tlsConfig = &tls.Config{
-			ServerName: host,
+			ServerName: host, // Use original hostname for SNI, not resolved IP
 			MinVersion: tls.VersionTLS12,
 		}
+	} else if tlsConfig.ServerName == "" {
+		tlsConfig.ServerName = host
 	}
 
 	dialer := &net.Dialer{Timeout: cfg.timeout}
@@ -181,11 +228,14 @@ func connectWithTLS(ctx context.Context, address, host string, cfg smtpConfig, s
 		}
 	}
 
+	state := conn.ConnectionState()
 	return SMTPConnectResponse{
-		Connected:  true,
-		Banner:     banner,
-		TLSVersion: tlsVersionString(conn.ConnectionState().Version),
-		LatencyMs:  latency.Milliseconds(),
+		Connected:      true,
+		Banner:         banner,
+		TLSVersion:     tlsVersionString(state.Version),
+		TLSCipherSuite: tls.CipherSuiteName(state.CipherSuite),
+		TLSServerName:  state.ServerName,
+		LatencyMs:      latency.Milliseconds(),
 	}
 }
 
@@ -218,15 +268,19 @@ func connectPlain(ctx context.Context, address, host string, useSTARTTLS bool, c
 	defer func() { _ = client.Quit() }()
 
 	var tlsVersion string
+	var tlsCipherSuite string
+	var tlsServerName string
 
 	// Upgrade to TLS if requested
 	if useSTARTTLS {
 		tlsConfig := cfg.tlsConfig
 		if tlsConfig == nil {
 			tlsConfig = &tls.Config{
-				ServerName: host,
+				ServerName: host, // Use original hostname for SNI, not resolved IP
 				MinVersion: tls.VersionTLS12,
 			}
+		} else if tlsConfig.ServerName == "" {
+			tlsConfig.ServerName = host
 		}
 
 		if err := client.StartTLS(tlsConfig); err != nil {
@@ -244,13 +298,17 @@ func connectPlain(ctx context.Context, address, host string, useSTARTTLS bool, c
 		state, ok := client.TLSConnectionState()
 		if ok {
 			tlsVersion = tlsVersionString(state.Version)
+			tlsCipherSuite = tls.CipherSuiteName(state.CipherSuite)
+			tlsServerName = state.ServerName
 		}
 	}
 
 	return SMTPConnectResponse{
-		Connected:  true,
-		TLSVersion: tlsVersion,
-		LatencyMs:  latency.Milliseconds(),
+		Connected:      true,
+		TLSVersion:     tlsVersion,
+		TLSCipherSuite: tlsCipherSuite,
+		TLSServerName:  tlsServerName,
+		LatencyMs:      latency.Milliseconds(),
 	}
 }
 

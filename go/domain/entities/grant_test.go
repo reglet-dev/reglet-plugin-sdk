@@ -1,83 +1,242 @@
-package entities_test
+package entities
 
 import (
+	"reflect"
 	"testing"
-
-	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
-	"github.com/stretchr/testify/assert"
 )
 
-func TestGrantSet_IsEmpty(t *testing.T) {
+func TestGrantSet_Difference(t *testing.T) {
 	tests := []struct {
 		name     string
-		grantSet *entities.GrantSet
-		want     bool
+		g        *GrantSet
+		other    *GrantSet
+		expected *GrantSet
 	}{
 		{
-			name:     "Nil GrantSet",
-			grantSet: nil,
-			want:     true,
+			name:     "Both nil",
+			g:        nil,
+			other:    nil,
+			expected: nil,
 		},
 		{
-			name:     "Empty GrantSet",
-			grantSet: &entities.GrantSet{},
-			want:     true,
+			name:     "G nil",
+			g:        nil,
+			other:    &GrantSet{},
+			expected: nil,
 		},
 		{
-			name: "GrantSet with empty capabilities",
-			grantSet: &entities.GrantSet{
-				Network: &entities.NetworkCapability{},
+			name:     "Other nil",
+			g:        &GrantSet{Env: &EnvironmentCapability{Variables: []string{"FOO"}}},
+			other:    nil,
+			expected: &GrantSet{Env: &EnvironmentCapability{Variables: []string{"FOO"}}},
+		},
+		{
+			name:     "Other empty",
+			g:        &GrantSet{Env: &EnvironmentCapability{Variables: []string{"FOO"}}},
+			other:    &GrantSet{},
+			expected: &GrantSet{Env: &EnvironmentCapability{Variables: []string{"FOO"}}},
+		},
+		{
+			name: "Network difference",
+			g: &GrantSet{
+				Network: &NetworkCapability{
+					Rules: []NetworkRule{
+						{Hosts: []string{"example.com"}, Ports: []string{"80"}},
+						{Hosts: []string{"google.com"}, Ports: []string{"443"}},
+					},
+				},
 			},
-			want: true,
-		},
-		{
-			name: "GrantSet with Network capability",
-			grantSet: &entities.GrantSet{
-				Network: &entities.NetworkCapability{
-					Rules: []entities.NetworkRule{
+			other: &GrantSet{
+				Network: &NetworkCapability{
+					Rules: []NetworkRule{
 						{Hosts: []string{"example.com"}, Ports: []string{"80"}},
 					},
 				},
 			},
-			want: false,
-		},
-		{
-			name: "GrantSet with FS capability",
-			grantSet: &entities.GrantSet{
-				FS: &entities.FileSystemCapability{
-					Rules: []entities.FileSystemRule{
-						{Read: []string{"/data/**"}},
+			expected: &GrantSet{
+				Network: &NetworkCapability{
+					Rules: []NetworkRule{
+						{Hosts: []string{"google.com"}, Ports: []string{"443"}},
 					},
 				},
 			},
-			want: false,
 		},
 		{
-			name: "GrantSet with Env capability",
-			grantSet: &entities.GrantSet{
-				Env: &entities.EnvironmentCapability{
-					Variables: []string{"DEBUG"},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "GrantSet with Exec capability",
-			grantSet: &entities.GrantSet{
-				Exec: &entities.ExecCapability{
-					Commands: []string{"/usr/bin/ls"},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "GrantSet with KV capability",
-			grantSet: &entities.GrantSet{
-				KV: &entities.KeyValueCapability{
-					Rules: []entities.KeyValueRule{
-						{Keys: []string{"config/*"}, Operation: "read"},
+			name: "FS difference",
+			g: &GrantSet{
+				FS: &FileSystemCapability{
+					Rules: []FileSystemRule{
+						{Read: []string{"/tmp"}, Write: []string{"/var"}},
+						{Read: []string{"/etc"}, Write: []string{}},
 					},
 				},
+			},
+			other: &GrantSet{
+				FS: &FileSystemCapability{
+					Rules: []FileSystemRule{
+						{Read: []string{"/tmp"}, Write: []string{"/var"}},
+					},
+				},
+			},
+			expected: &GrantSet{
+				FS: &FileSystemCapability{
+					Rules: []FileSystemRule{
+						{Read: []string{"/etc"}, Write: []string{}},
+					},
+				},
+			},
+		},
+		{
+			name: "Env difference",
+			g: &GrantSet{
+				Env: &EnvironmentCapability{
+					Variables: []string{"FOO", "BAR"},
+				},
+			},
+			other: &GrantSet{
+				Env: &EnvironmentCapability{
+					Variables: []string{"FOO"},
+				},
+			},
+			expected: &GrantSet{
+				Env: &EnvironmentCapability{
+					Variables: []string{"BAR"},
+				},
+			},
+		},
+		{
+			name: "Exec difference",
+			g: &GrantSet{
+				Exec: &ExecCapability{
+					Commands: []string{"ls", "grep"},
+				},
+			},
+			other: &GrantSet{
+				Exec: &ExecCapability{
+					Commands: []string{"ls"},
+				},
+			},
+			expected: &GrantSet{
+				Exec: &ExecCapability{
+					Commands: []string{"grep"},
+				},
+			},
+		},
+		{
+			name: "KV difference",
+			g: &GrantSet{
+				KV: &KeyValueCapability{
+					Rules: []KeyValueRule{
+						{Operation: "read", Keys: []string{"key1"}},
+						{Operation: "write", Keys: []string{"key2"}},
+					},
+				},
+			},
+			other: &GrantSet{
+				KV: &KeyValueCapability{
+					Rules: []KeyValueRule{
+						{Operation: "read", Keys: []string{"key1"}},
+					},
+				},
+			},
+			expected: &GrantSet{
+				KV: &KeyValueCapability{
+					Rules: []KeyValueRule{
+						{Operation: "write", Keys: []string{"key2"}},
+					},
+				},
+			},
+		},
+		{
+			name: "No difference (subset)",
+			g: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO"}},
+			},
+			other: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO", "BAR"}},
+			},
+			expected: &GrantSet{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.g.Difference(tt.other)
+			if !reflect.DeepEqual(got, tt.expected) {
+				t.Errorf("GrantSet.Difference() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGrantSet_Contains(t *testing.T) {
+	tests := []struct {
+		name  string
+		g     *GrantSet
+		other *GrantSet
+		want  bool
+	}{
+		{
+			name:  "Nil contains nil",
+			g:     nil,
+			other: nil,
+			want:  true,
+		},
+		{
+			name:  "Nil contains empty",
+			g:     nil,
+			other: &GrantSet{},
+			want:  true,
+		},
+		{
+			name:  "Nil contains something",
+			g:     nil,
+			other: &GrantSet{Env: &EnvironmentCapability{Variables: []string{"FOO"}}},
+			want:  false,
+		},
+		{
+			name:  "Something contains nil",
+			g:     &GrantSet{Env: &EnvironmentCapability{Variables: []string{"FOO"}}},
+			other: nil,
+			want:  true,
+		},
+		{
+			name: "Equal sets",
+			g: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO"}},
+			},
+			other: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO"}},
+			},
+			want: true,
+		},
+		{
+			name: "Superset contains subset",
+			g: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO", "BAR"}},
+			},
+			other: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO"}},
+			},
+			want: true,
+		},
+		{
+			name: "Subset does not contain superset",
+			g: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO"}},
+			},
+			other: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO", "BAR"}},
+			},
+			want: false,
+		},
+		{
+			name: "Disjoint sets",
+			g: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"FOO"}},
+			},
+			other: &GrantSet{
+				Env: &EnvironmentCapability{Variables: []string{"BAR"}},
 			},
 			want: false,
 		},
@@ -85,137 +244,9 @@ func TestGrantSet_IsEmpty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, tt.grantSet.IsEmpty())
+			if got := tt.g.Contains(tt.other); got != tt.want {
+				t.Errorf("GrantSet.Contains() = %v, want %v", got, tt.want)
+			}
 		})
 	}
-}
-
-func TestGrantSet_Merge(t *testing.T) {
-	t.Run("Merge Nil", func(t *testing.T) {
-		g := &entities.GrantSet{
-			Network: &entities.NetworkCapability{
-				Rules: []entities.NetworkRule{
-					{Hosts: []string{"h1"}, Ports: []string{"80"}},
-				},
-			},
-		}
-		g.Merge(nil)
-		assert.Len(t, g.Network.Rules, 1)
-		assert.Equal(t, []string{"h1"}, g.Network.Rules[0].Hosts)
-	})
-
-	t.Run("Merge Empty", func(t *testing.T) {
-		g := &entities.GrantSet{
-			Network: &entities.NetworkCapability{
-				Rules: []entities.NetworkRule{
-					{Hosts: []string{"h1"}, Ports: []string{"80"}},
-				},
-			},
-		}
-		g.Merge(&entities.GrantSet{})
-		assert.Len(t, g.Network.Rules, 1)
-	})
-
-	t.Run("Merge Network Rules", func(t *testing.T) {
-		g1 := &entities.GrantSet{
-			Network: &entities.NetworkCapability{
-				Rules: []entities.NetworkRule{
-					{Hosts: []string{"h1"}, Ports: []string{"80"}},
-				},
-			},
-		}
-		g2 := &entities.GrantSet{
-			Network: &entities.NetworkCapability{
-				Rules: []entities.NetworkRule{
-					{Hosts: []string{"h2"}, Ports: []string{"443"}},
-				},
-			},
-		}
-		g1.Merge(g2)
-		assert.Len(t, g1.Network.Rules, 2)
-		assert.Equal(t, "h1", g1.Network.Rules[0].Hosts[0])
-		assert.Equal(t, "h2", g1.Network.Rules[1].Hosts[0])
-	})
-
-	t.Run("Merge FS Rules", func(t *testing.T) {
-		g1 := &entities.GrantSet{
-			FS: &entities.FileSystemCapability{
-				Rules: []entities.FileSystemRule{
-					{Read: []string{"/data/**"}},
-				},
-			},
-		}
-		g2 := &entities.GrantSet{
-			FS: &entities.FileSystemCapability{
-				Rules: []entities.FileSystemRule{
-					{Write: []string{"/tmp/**"}},
-				},
-			},
-		}
-		g1.Merge(g2)
-		assert.Len(t, g1.FS.Rules, 2)
-	})
-
-	t.Run("Merge Env", func(t *testing.T) {
-		g1 := &entities.GrantSet{
-			Env: &entities.EnvironmentCapability{
-				Variables: []string{"FOO"},
-			},
-		}
-		g2 := &entities.GrantSet{
-			Env: &entities.EnvironmentCapability{
-				Variables: []string{"BAR"},
-			},
-		}
-		g1.Merge(g2)
-		assert.ElementsMatch(t, []string{"FOO", "BAR"}, g1.Env.Variables)
-	})
-
-	t.Run("Merge Exec", func(t *testing.T) {
-		g1 := &entities.GrantSet{
-			Exec: &entities.ExecCapability{
-				Commands: []string{"/usr/bin/ls"},
-			},
-		}
-		g2 := &entities.GrantSet{
-			Exec: &entities.ExecCapability{
-				Commands: []string{"/usr/bin/cat"},
-			},
-		}
-		g1.Merge(g2)
-		assert.ElementsMatch(t, []string{"/usr/bin/ls", "/usr/bin/cat"}, g1.Exec.Commands)
-	})
-
-	t.Run("Merge KV Rules", func(t *testing.T) {
-		g1 := &entities.GrantSet{
-			KV: &entities.KeyValueCapability{
-				Rules: []entities.KeyValueRule{
-					{Keys: []string{"config/*"}, Operation: "read"},
-				},
-			},
-		}
-		g2 := &entities.GrantSet{
-			KV: &entities.KeyValueCapability{
-				Rules: []entities.KeyValueRule{
-					{Keys: []string{"cache/*"}, Operation: "write"},
-				},
-			},
-		}
-		g1.Merge(g2)
-		assert.Len(t, g1.KV.Rules, 2)
-	})
-
-	t.Run("Merge into nil capability", func(t *testing.T) {
-		g1 := &entities.GrantSet{}
-		g2 := &entities.GrantSet{
-			Network: &entities.NetworkCapability{
-				Rules: []entities.NetworkRule{
-					{Hosts: []string{"h2"}, Ports: []string{"443"}},
-				},
-			},
-		}
-		g1.Merge(g2)
-		assert.NotNil(t, g1.Network)
-		assert.Len(t, g1.Network.Rules, 1)
-	})
 }

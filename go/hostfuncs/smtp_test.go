@@ -144,3 +144,24 @@ type testError struct {
 func (e *testError) Error() string {
 	return e.message
 }
+
+func TestPerformSMTPConnect_SSRFProtection_BlocksPrivateIP(t *testing.T) {
+	resp := PerformSMTPConnect(context.Background(),
+		SMTPConnectRequest{Host: "127.0.0.1", Port: 25},
+		WithSMTPSSRFProtection(false),
+	)
+	require.False(t, resp.Connected)
+	require.NotNil(t, resp.Error)
+	assert.Equal(t, "SSRF_BLOCKED", resp.Error.Code)
+}
+
+func TestPerformSMTPConnect_SSRFProtection_AllowPrivateWhenEnabled(t *testing.T) {
+	resp := PerformSMTPConnect(context.Background(),
+		SMTPConnectRequest{Host: "127.0.0.1", Port: 25},
+		WithSMTPSSRFProtection(true),
+	)
+	// Should attempt connection (may fail, but not SSRF_BLOCKED)
+	if resp.Error != nil {
+		assert.NotEqual(t, "SSRF_BLOCKED", resp.Error.Code)
+	}
+}

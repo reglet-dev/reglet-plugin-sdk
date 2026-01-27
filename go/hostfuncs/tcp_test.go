@@ -127,3 +127,80 @@ func TestWithTCPTimeout_IgnoresInvalid(t *testing.T) {
 
 	assert.Equal(t, 5*time.Second, cfg.timeout, "should keep default for negative duration")
 }
+
+func TestPerformTCPConnect_TLS_Success(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping network test in short mode")
+	}
+
+	// Connect to example.com:443 (HTTPS)
+	// This is a reliable external host for testing TLS
+	req := TCPConnectRequest{
+		Host:    "example.com",
+		Port:    443,
+		Timeout: 5000,
+		UseTLS:  true,
+	}
+
+	resp := PerformTCPConnect(context.Background(), req)
+
+	if !resp.Connected {
+		t.Logf("TLS connection failed: %v", resp.Error)
+	}
+	require.True(t, resp.Connected, "should connect to example.com:443 with TLS")
+	assert.NotEmpty(t, resp.RemoteAddr)
+	assert.Nil(t, resp.Error)
+
+	// Verify TLS fields
+	assert.NotEmpty(t, resp.TLSVersion, "should have TLS version")
+	assert.NotEmpty(t, resp.TLSCipherSuite, "should have cipher suite")
+	assert.NotEmpty(t, resp.TLSCertSubject, "should have cert subject")
+	assert.NotEmpty(t, resp.TLSCertIssuer, "should have cert issuer")
+}
+
+func TestPerformTCPConnect_TLS_HandshakeFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping network test in short mode")
+	}
+
+	// Connect to an HTTP port (80) with TLS, which should fail the handshake
+	req := TCPConnectRequest{
+		Host:    "example.com",
+		Port:    80,
+		Timeout: 5000,
+		UseTLS:  true,
+	}
+
+	resp := PerformTCPConnect(context.Background(), req)
+
+	assert.False(t, resp.Connected, "should not connect successfully with TLS to non-TLS port")
+	require.NotNil(t, resp.Error)
+	// The error might be "oversized record received with length..." or similar TLS error
+	// mapped to TLS_ERROR or CONNECTION_FAILED depending on implementation details
+	t.Logf("Got expected error: %s", resp.Error.Code)
+}
+
+func TestPerformTCPConnect_SSRFProtection_BlocksPrivateIP(t *testing.T) {
+	resp := PerformTCPConnect(context.Background(),
+		TCPConnectRequest{Host: "127.0.0.1", Port: 80},
+		WithTCPSSRFProtection(false),
+	)
+	require.False(t, resp.Connected)
+	require.NotNil(t, resp.Error)
+	assert.Equal(t, "SSRF_BLOCKED", resp.Error.Code)
+}
+
+func TestPerformTCPConnect_SSRFProtection_AllowPrivateWhenEnabled(t *testing.T) {
+	// This test would need a local server to connect to, or we can just expect a different error than SSRF_BLOCKED
+	// Since we don't have a server listening on 127.0.0.1:80 (necessarily), we expect CONNECTION_REFUSED or similar.
+	// The key is that it shouldn't be SSRF_BLOCKED.
+
+	resp := PerformTCPConnect(context.Background(),
+		TCPConnectRequest{Host: "127.0.0.1", Port: 80},
+		WithTCPSSRFProtection(true), // allowPrivate=true
+	)
+	// Should attempt connection (may fail if nothing listening, but not SSRF_BLOCKED)
+	if resp.Error != nil {
+		assert.NotEqual(t, "SSRF_BLOCKED", resp.Error.Code, "Should not be blocked by SSRF when allowed")
+	}
+}

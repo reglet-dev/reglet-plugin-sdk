@@ -125,3 +125,32 @@ func TestHTTPOptions_IgnoresInvalid(t *testing.T) {
 	WithHTTPMaxBodySize(-1)(&cfg)
 	assert.Equal(t, int64(10*1024*1024), cfg.maxBodySize, "should keep default for negative body size")
 }
+
+func TestPerformHTTPRequest_SSRFProtection_BlocksPrivateIP(t *testing.T) {
+	resp := PerformHTTPRequest(context.Background(),
+		HTTPRequest{Method: "GET", URL: "http://127.0.0.1/"},
+		WithHTTPSSRFProtection(false),
+	)
+	require.NotNil(t, resp.Error)
+	assert.Equal(t, "SSRF_BLOCKED", resp.Error.Code)
+}
+
+func TestPerformHTTPRequest_SSRFProtection_AllowPrivateWhenEnabled(t *testing.T) {
+	// For this test, we expect it NOT to be blocked by SSRF,
+	// but it likely fails to connect since nothing is running on 127.0.0.1:80
+	// unless we spin up a server.
+	// But the key is that error code is NOT "SSRF_BLOCKED".
+
+	resp := PerformHTTPRequest(context.Background(),
+		HTTPRequest{Method: "GET", URL: "http://127.0.0.1/"},
+		// Allow private IPs
+		WithHTTPSSRFProtection(true),
+		// Short timeout to fail fast if it tries to connect
+		WithHTTPRequestTimeout(100*time.Millisecond),
+	)
+
+	// If it fails, it should NOT be SSRF_BLOCKED
+	if resp.Error != nil {
+		assert.NotEqual(t, "SSRF_BLOCKED", resp.Error.Code, "Should allow private IP connection")
+	}
+}

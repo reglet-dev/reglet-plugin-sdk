@@ -34,4 +34,5 @@ type CapabilityRequest struct {
 	Kind        string
 	Description string
 	RiskLevel   RiskLevel
+	IsBroad     bool
 }
