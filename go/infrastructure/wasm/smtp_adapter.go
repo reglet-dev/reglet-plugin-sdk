@@ -59,10 +59,12 @@ func (a *SMTPAdapter) Connect(ctx context.Context, host, port string, timeout ti
 	}
 
 	return &ports.SMTPConnectResult{
-		Connected:    response.Connected,
-		Banner:       response.Banner,
-		TLSEnabled:   response.TLS,
-		TLSVersion:   response.TLSVersion,
-		ResponseTime: time.Duration(response.ResponseTimeMs) * time.Millisecond,
+		Connected:      response.Connected,
+		Banner:         response.Banner,
+		TLSEnabled:     response.TLS,
+		TLSVersion:     response.TLSVersion,
+		TLSCipherSuite: response.TLSCipherSuite,
+		TLSServerName:  response.TLSServerName,
+		ResponseTime:   time.Duration(response.ResponseTimeMs) * time.Millisecond,
 	}, nil
 }

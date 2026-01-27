@@ -102,6 +102,14 @@ func RunSMTPCheck(ctx context.Context, cfg config.Config, opts ...SMTPCheckOptio
 	if resp.TLSVersion != "" {
 		resultData["tls_version"] = resp.TLSVersion
 	}
+	if resp.TLSCipherSuite != "" {
+		resultData["tls_cipher_suite"] = resp.TLSCipherSuite
+	}
+	if resp.TLSServerName != "" {
+		resultData["tls_server_name"] = resp.TLSServerName
+	}
+
+	resultData["address"] = fmt.Sprintf("%s:%d", host, port)
 
 	// Return result based on connection status
 	if resp.Connected {

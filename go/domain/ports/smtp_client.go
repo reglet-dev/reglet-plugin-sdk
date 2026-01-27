@@ -14,9 +14,11 @@ type SMTPClient interface {
 
 // SMTPConnectResult represents the result of an SMTP connection attempt.
 type SMTPConnectResult struct {
-	Banner       string
-	TLSVersion   string
-	ResponseTime time.Duration
-	Connected    bool
-	TLSEnabled   bool
+	Banner         string
+	TLSVersion     string
+	TLSCipherSuite string
+	TLSServerName  string
+	ResponseTime   time.Duration
+	Connected      bool
+	TLSEnabled     bool
 }
