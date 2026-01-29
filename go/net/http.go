@@ -124,9 +124,9 @@ func RunHTTPCheck(ctx context.Context, cfg config.Config, opts ...HTTPCheckOptio
 	}
 
 	resultData := map[string]any{
-		"status_code": resp.StatusCode,
-		"latency_ms":  latency.Milliseconds(),
-		"protocol":    resp.Proto,
+		"status_code":      resp.StatusCode,
+		"response_time_ms": latency.Milliseconds(),
+		"protocol":         resp.Proto,
 	}
 
 	if len(resp.Headers) > 0 {
@@ -142,7 +142,9 @@ func RunHTTPCheck(ctx context.Context, cfg config.Config, opts ...HTTPCheckOptio
 		// Create preview
 		preview := resp.Body
 		truncated := false
-		if len(preview) > bodyPreviewLength {
+		// Check truncation only if limit is positive
+		// A negative value for bodyPreviewLength indicates "unlimited", so the full body is preserved.
+		if bodyPreviewLength >= 0 && len(preview) > bodyPreviewLength {
 			preview = preview[:bodyPreviewLength]
 			truncated = true
 		}

@@ -128,18 +128,37 @@ func (c *CapabilityChecker) parseNetworkPattern(pattern string, grants *entities
 
 	// Try as a host pattern - check with common ports
 	// The legacy pattern "outbound:hostname" means allow any port to that host
+	// CRITICAL: We use EvaluateNetwork (silent) here even if silent=false.
+	// This prevents "Permission Denied" logs from appearing if this broad check fails
+	// but a specific port probe (below) succeeds. We only log at the very end if ALL checks fail.
 	req := entities.NetworkRequest{Host: portOrHost, Port: 0}
-	if c.policy.CheckNetwork(req, grants) {
+	if c.policy.EvaluateNetwork(req, grants) {
 		return true
 	}
 
 	// Also try common ports (80, 443) as fallback
-	for _, port := range []int{80, 443, 0} {
+	// Candidates to probe:
+	// 1. {Host: host, Port: 0}  (Any port)
+	// 2. {Host: host, Port: 80} (HTTP)
+	// 3. {Host: host, Port: 443} (HTTPS)
+	// 4. {Host: host, Port: 0}  (Duplicate of 1, but part of old loop logic, simplifies migration)
+
+	candidates := []int{80, 443}
+
+	for _, port := range candidates {
 		req := entities.NetworkRequest{Host: portOrHost, Port: port}
-		if c.policy.CheckNetwork(req, grants) {
+		// ALWAYS use Evaluate (silent) for probing
+		if c.policy.EvaluateNetwork(req, grants) {
 			return true
 		}
 	}
+
+	// If we got here, ALL probes failed.
+	// Log the primary failure to give the user a useful error message.
+	// We use Port: 0 to indicate the generic "host" request failed.
+	req = entities.NetworkRequest{Host: portOrHost, Port: 0}
+	// This will return false and Log to stderr
+	c.policy.CheckNetwork(req, grants)
 
 	return false
 }
@@ -194,6 +213,28 @@ func (c *CapabilityChecker) CheckNetwork(pluginName string, req entities.Network
 	return fmt.Errorf("network capability denied: %s:%d", req.Host, req.Port)
 }
 
+// CheckNetworkConnection checks if a specific network connection (host:port) is allowed.
+// It uses EvaluateNetwork (silent) first to avoid logspam, and only checks loudly if denied.
+func (c *CapabilityChecker) CheckNetworkConnection(pluginName, host string, port int) error {
+	grants, ok := c.grantedCapabilities[pluginName]
+	if !ok || grants == nil {
+		return fmt.Errorf("no capabilities granted to plugin %s", pluginName)
+	}
+
+	req := entities.NetworkRequest{Host: host, Port: port}
+
+	// 1. Silent Check: See if ANY rule matches this specific request.
+	if c.policy.EvaluateNetwork(req, grants) {
+		return nil
+	}
+
+	// 2. Loud Check: If denied, call CheckNetwork to trigger the DenialHandler (logging).
+	// We know it will return false, but we call it for the side effect.
+	c.policy.CheckNetwork(req, grants)
+
+	return fmt.Errorf("network capability denied: %s:%d", host, port)
+}
+
 // CheckFileSystem performs typed filesystem capability check.
 func (c *CapabilityChecker) CheckFileSystem(pluginName string, req entities.FileSystemRequest) error {
 	grants, ok := c.grantedCapabilities[pluginName]
@@ -245,7 +286,7 @@ func (c *CapabilityChecker) AllowsPrivateNetwork(pluginName string) bool {
 
 	// Create a dummy request for private access.
 	req := entities.NetworkRequest{Host: "127.0.0.1", Port: 0}
-	return c.policy.CheckNetwork(req, grants)
+	return c.policy.EvaluateNetwork(req, grants)
 }
 
 // ToCapabilityGetter returns a CapabilityGetter function that uses this checker.

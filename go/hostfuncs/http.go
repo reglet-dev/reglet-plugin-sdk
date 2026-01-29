@@ -55,6 +55,9 @@ type HTTPResponse struct {
 
 	// BodyTruncated indicates if the body was truncated due to size limits.
 	BodyTruncated bool `json:"body_truncated,omitempty"`
+
+	// Proto is the protocol version (e.g. "HTTP/1.1").
+	Proto string `json:"proto,omitempty"`
 }
 
 // HTTPError represents an HTTP request error.
@@ -379,5 +382,6 @@ func readHTTPResponse(resp *http.Response, latency time.Duration, maxBodySize in
 		Body:          respBody,
 		BodyTruncated: truncated,
 		LatencyMs:     latency.Milliseconds(),
+		Proto:         resp.Proto,
 	}
 }

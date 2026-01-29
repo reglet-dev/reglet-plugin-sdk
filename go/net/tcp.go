@@ -100,9 +100,9 @@ func RunTCPCheck(ctx context.Context, cfg config.Config, opts ...TCPCheckOption)
 
 	// Build result data
 	resultData := map[string]any{
-		"connected":  conn.IsConnected(),
-		"latency_ms": latency.Milliseconds(),
-		"address":    address,
+		"connected":        conn.IsConnected(),
+		"response_time_ms": latency.Milliseconds(),
+		"address":          address,
 	}
 
 	if conn.RemoteAddr() != "" {

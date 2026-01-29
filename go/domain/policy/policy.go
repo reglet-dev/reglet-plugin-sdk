@@ -205,9 +205,16 @@ func compilePatterns(patterns []string) []string {
 }
 
 func (p *Policy) CheckNetwork(req entities.NetworkRequest, grants *entities.GrantSet) bool {
+	if p.EvaluateNetwork(req, grants) {
+		return true
+	}
+	p.config.denialHandler.OnDenial("network", req, "host/port not allowed")
+	return false
+}
+
+func (p *Policy) EvaluateNetwork(req entities.NetworkRequest, grants *entities.GrantSet) bool {
 	c := p.getCompiled(grants)
 	if c == nil {
-		p.config.denialHandler.OnDenial("network", req, "no grants")
 		return false
 	}
 
@@ -233,15 +240,20 @@ func (p *Policy) CheckNetwork(req entities.NetworkRequest, grants *entities.Gran
 			return true
 		}
 	}
-
-	p.config.denialHandler.OnDenial("network", req, "host/port not allowed")
 	return false
 }
 
 func (p *Policy) CheckFileSystem(req entities.FileSystemRequest, grants *entities.GrantSet) bool {
+	if p.EvaluateFileSystem(req, grants) {
+		return true
+	}
+	p.config.denialHandler.OnDenial("fs", req, "path not allowed")
+	return false
+}
+
+func (p *Policy) EvaluateFileSystem(req entities.FileSystemRequest, grants *entities.GrantSet) bool {
 	c := p.getCompiled(grants)
 	if c == nil {
-		p.config.denialHandler.OnDenial("fs", req, "no grants")
 		return false
 	}
 
@@ -249,7 +261,6 @@ func (p *Policy) CheckFileSystem(req entities.FileSystemRequest, grants *entitie
 	path := filepath.Clean(req.Path)
 	if !filepath.IsAbs(path) {
 		if p.config.cwd == "" {
-			p.config.denialHandler.OnDenial("fs", req, "relative path without working directory")
 			return false // Deny relative paths without cwd
 		}
 		path = filepath.Join(p.config.cwd, path)
@@ -277,15 +288,20 @@ func (p *Policy) CheckFileSystem(req entities.FileSystemRequest, grants *entitie
 			}
 		}
 	}
-
-	p.config.denialHandler.OnDenial("fs", req, "path not allowed")
 	return false
 }
 
 func (p *Policy) CheckEnvironment(req entities.EnvironmentRequest, grants *entities.GrantSet) bool {
+	if p.EvaluateEnvironment(req, grants) {
+		return true
+	}
+	p.config.denialHandler.OnDenial("env", req, "variable not allowed")
+	return false
+}
+
+func (p *Policy) EvaluateEnvironment(req entities.EnvironmentRequest, grants *entities.GrantSet) bool {
 	c := p.getCompiled(grants)
 	if c == nil {
-		p.config.denialHandler.OnDenial("env", req, "no grants")
 		return false
 	}
 
@@ -294,15 +310,20 @@ func (p *Policy) CheckEnvironment(req entities.EnvironmentRequest, grants *entit
 			return true
 		}
 	}
-
-	p.config.denialHandler.OnDenial("env", req, "variable not allowed")
 	return false
 }
 
 func (p *Policy) CheckExec(req entities.ExecCapabilityRequest, grants *entities.GrantSet) bool {
+	if p.EvaluateExec(req, grants) {
+		return true
+	}
+	p.config.denialHandler.OnDenial("exec", req, "command not allowed")
+	return false
+}
+
+func (p *Policy) EvaluateExec(req entities.ExecCapabilityRequest, grants *entities.GrantSet) bool {
 	c := p.getCompiled(grants)
 	if c == nil {
-		p.config.denialHandler.OnDenial("exec", req, "no grants")
 		return false
 	}
 
@@ -312,15 +333,20 @@ func (p *Policy) CheckExec(req entities.ExecCapabilityRequest, grants *entities.
 			return true
 		}
 	}
-
-	p.config.denialHandler.OnDenial("exec", req, "command not allowed")
 	return false
 }
 
 func (p *Policy) CheckKeyValue(req entities.KeyValueRequest, grants *entities.GrantSet) bool {
+	if p.EvaluateKeyValue(req, grants) {
+		return true
+	}
+	p.config.denialHandler.OnDenial("kv", req, "key/operation not allowed")
+	return false
+}
+
+func (p *Policy) EvaluateKeyValue(req entities.KeyValueRequest, grants *entities.GrantSet) bool {
 	c := p.getCompiled(grants)
 	if c == nil {
-		p.config.denialHandler.OnDenial("kv", req, "no grants")
 		return false
 	}
 
@@ -348,7 +374,5 @@ func (p *Policy) CheckKeyValue(req entities.KeyValueRequest, grants *entities.Gr
 			}
 		}
 	}
-
-	p.config.denialHandler.OnDenial("kv", req, "key/operation not allowed")
 	return false
 }
