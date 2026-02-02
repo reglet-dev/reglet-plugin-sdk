@@ -81,9 +81,6 @@ func (v *CapabilityValidator) Validate(manifest *entities.Manifest) (*entities.V
 			result.Valid = false
 			var ve *jsonschema.ValidationError
 			if errors.As(err, &ve) {
-				// We can check BasicOutput for simple list of errors
-				// But we assume the library provides a structured error
-				// For now, simple error string
 				result.Errors = append(result.Errors, entities.ValidationError{
 					Field:   kind,
 					Message: ve.Error(),

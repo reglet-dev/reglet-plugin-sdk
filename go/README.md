@@ -8,6 +8,7 @@ The Reglet Go SDK provides Go APIs for writing WebAssembly (WASM) plugins for th
 
 ## Features
 
+- **Example-Based Testing**: Register examples that become documentation and auto-generated tests
 - **Full Context Propagation**: Deadlines, cancellation, and values flow to all operations
 - **Memory Management**: Automatic allocation tracking with 100 MB safety limit
 - **Network Operations**: DNS, HTTP, TCP, and SMTP with explicit API
@@ -87,8 +88,8 @@ GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm main.go
 Detailed documentation for each subpackage:
 
 - **[host](host/doc.go)** - Host runtime execution (WASM engine)
-- **[application/plugin](application/plugin/doc.go)** - Plugin development helpers
-- **[application/schema](application/schema/generator.go)** - JSON Schema generation
+- **[application/plugin](application/plugin/doc.go)** - Plugin development, typed operations (`Op[I,O]`, `RegisterOp`, `GetClient`)
+- **[application/schema](application/schema/generator.go)** - JSON Schema generation from Go structs
 - **[exec](exec/README.md)** - Command execution
 - **[log](log/README.md)** - Structured logging
 - **[net](net/README.md)** - Network operations (DNS, HTTP, TCP)
@@ -109,6 +110,156 @@ type Plugin interface {
 
     // Check executes the main plugin logic
     Check(ctx context.Context, config map[string]any) (entities.Result, error)
+}
+```
+
+### Typed Operations (Recommended)
+
+For plugins with multiple operations or complex input/output types, use the **typed operations pattern**. This provides type safety, auto-generated JSON schemas, and example-based testing.
+
+#### Defining a Typed Service
+
+```go
+package services
+
+import (
+    "context"
+    "github.com/reglet-dev/reglet-sdk/go/application/plugin"
+    "github.com/reglet-dev/reglet-sdk/go/domain/ports"
+)
+
+// Input/Output types with JSON schema tags
+type ResolveInput struct {
+    Hostname   string `json:"hostname" jsonschema:"required,description=Target hostname to resolve"`
+    RecordType string `json:"record_type,omitempty" jsonschema:"enum=A,enum=MX,enum=TXT,default=A"`
+}
+
+type ResolveOutput struct {
+    Hostname string   `json:"hostname" jsonschema:"description=Queried hostname"`
+    Records  []string `json:"records" jsonschema:"description=Resolved DNS records"`
+}
+
+// Service struct with typed Op fields
+type DNSService struct {
+    plugin.Service `name:"dns" desc:"DNS resolution and record lookup"`
+
+    Resolve plugin.Op[ResolveInput, ResolveOutput] `desc:"Resolve hostname" method:"ResolveHandler"`
+}
+
+func init() {
+    // Register operation with examples (used for docs and auto-testing)
+    plugin.RegisterOp[ResolveInput, ResolveOutput]("Resolve",
+        plugin.Example[ResolveInput, ResolveOutput]{
+            Name:        "basic_a",
+            Description: "Resolve A record",
+            Input:       ResolveInput{Hostname: "example.com", RecordType: "A"},
+            ExpectedOutput: &ResolveOutput{
+                Hostname: "example.com",
+                Records:  []string{"93.184.216.34"},
+            },
+        },
+        plugin.Example[ResolveInput, ResolveOutput]{
+            Name:          "nxdomain",
+            Description:   "Non-existent domain",
+            Input:         ResolveInput{Hostname: "invalid.test"},
+            ExpectedError: "DNS lookup failed",
+        },
+    )
+
+    // Auto-register service with plugin
+    plugin.MustRegisterService(core.Plugin, &DNSService{})
+}
+
+// Typed handler - receives parsed input, returns typed output
+func (s *DNSService) ResolveHandler(ctx context.Context, in *ResolveInput) (*ResolveOutput, error) {
+    // Get client from context (injected by runtime)
+    resolver := plugin.GetClient[ports.DNSResolver](ctx)
+
+    records, err := resolver.LookupHost(ctx, in.Hostname)
+    if err != nil {
+        return nil, fmt.Errorf("DNS lookup failed: %w", err)
+    }
+
+    return &ResolveOutput{
+        Hostname: in.Hostname,
+        Records:  records,
+    }, nil
+}
+```
+
+#### Benefits
+
+| Feature | Description |
+|---------|-------------|
+| **Type Safety** | Handlers receive `*Input` and return `*Output` - no manual parsing |
+| **Auto Schemas** | JSON schemas generated from struct tags for CLI and docs |
+| **Example Testing** | `GenerateExampleTests()` creates tests from registered examples |
+| **Client Injection** | `plugin.GetClient[T](ctx)` provides type-safe client access |
+| **Rich Manifests** | Manifest includes `input_fields`, `output_schema`, and `examples` |
+
+#### Client Injection
+
+Access injected clients via context with type safety:
+
+```go
+// Get client - panics if wrong type or missing
+client := plugin.GetClient[*MyClient](ctx)
+
+// Try to get client - returns nil if missing
+client, ok := plugin.TryGetClient[*MyClient](ctx)
+if !ok {
+    return nil, errors.New("client not injected")
+}
+```
+
+#### Auto-Generated Tests
+
+Use `GenerateExampleTests` to create tests from registered examples:
+
+```go
+package services_test
+
+import (
+    "testing"
+    "github.com/reglet-dev/reglet-sdk/go/application/plugin"
+    "myproject/plugins/dns/core"
+)
+
+func TestExamples(t *testing.T) {
+    mockClient := &mockDNSResolver{
+        records: map[string][]string{
+            "example.com": {"93.184.216.34"},
+        },
+    }
+    // Runs all registered examples as subtests
+    plugin.GenerateExampleTests(t, core.Plugin, mockClient)
+}
+```
+
+#### Manifest Output
+
+Typed operations generate rich manifests for CLI tooling:
+
+```json
+{
+  "services": {
+    "dns": {
+      "operations": [{
+        "name": "resolve",
+        "description": "Resolve hostname",
+        "input_fields": ["hostname", "record_type"],
+        "output_schema": {
+          "properties": {
+            "hostname": {"type": "string"},
+            "records": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "examples": [
+          {"name": "basic_a", "input": {"hostname": "example.com"}}
+        ]
+      }]
+    }
+  }
 }
 ```
 
@@ -482,6 +633,60 @@ func TestMyPlugin_Check(t *testing.T) {
 
     require.NoError(t, err)
     assert.Equal(t, entities.ResultStatusSuccess, result.Status)
+}
+```
+
+### Testing Typed Operations
+
+For plugins using typed operations, use `GenerateExampleTests` to auto-generate tests from registered examples:
+
+```go
+func TestExamples(t *testing.T) {
+    // Create mock client matching your service's expected client type
+    mockClient := &mockDNSResolver{
+        records: map[string][]string{
+            "example.com": {"93.184.216.34"},
+        },
+    }
+
+    // Runs all registered examples as subtests
+    plugin.GenerateExampleTests(t, core.Plugin, mockClient)
+}
+
+// Test typed handlers directly
+func TestResolve_Handler(t *testing.T) {
+    svc := &DNSService{}
+
+    ctx := context.Background()
+    ctx = plugin.WithClient(ctx, &mockDNSResolver{...})
+
+    out, err := svc.ResolveHandler(ctx, &ResolveInput{
+        Hostname:   "example.com",
+        RecordType: "A",
+    })
+
+    require.NoError(t, err)
+    assert.Equal(t, "example.com", out.Hostname)
+    assert.Contains(t, out.Records, "93.184.216.34")
+}
+```
+
+For advanced test configuration:
+
+```go
+func TestExamples_WithConfig(t *testing.T) {
+    config := plugin.ExampleTestConfig{
+        SkipExamples: []string{"slow_test", "requires_network"},
+        MockClientFactory: func(exampleName string) any {
+            // Return different mocks based on example
+            if exampleName == "error_case" {
+                return &mockDNSResolver{shouldFail: true}
+            }
+            return &mockDNSResolver{}
+        },
+    }
+
+    plugin.GenerateExampleTestsWithConfig(t, core.Plugin, nil, config)
 }
 ```
 

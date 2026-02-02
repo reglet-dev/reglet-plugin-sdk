@@ -134,8 +134,6 @@ func TestRunTCPCheck_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := RunTCPCheck(context.Background(), tt.cfg)
-			// Validation errors return (result, nil) in current implementation?
-			// Checking implementation: return entities.ResultError(...), nil
 			require.NoError(t, err)
 			assert.True(t, result.IsError())
 			assert.Equal(t, tt.errCode, result.Error.Code)
@@ -175,16 +173,12 @@ func TestRunTCPCheck_WithMockDialer_ConnectionFailed(t *testing.T) {
 	mockDialer := new(MockTCPDialer)
 
 	// Simulate connection error
-	// Simulate connection error
 	mockDialer.On("DialSecure", mock.Anything, "example.com:80", 5000, false).Return(nil, errors.New("timeout"))
 
 	cfg := config.Config{"host": "example.com", "port": 80}
 
 	result, err := RunTCPCheck(context.Background(), cfg, WithTCPDialer(mockDialer))
 
-	// Implementation returns error detail in result AND as error?
-	// Checking implementation: return entities.ResultError(...), errDetail
-	// So err is NOT nil.
 	require.Error(t, err)
 	assert.True(t, result.IsError())
 	assert.Equal(t, "CONNECTION_FAILED", result.Error.Code)
@@ -194,10 +188,6 @@ func TestRunTCPCheck_WithMockDialer_ConnectionFailed(t *testing.T) {
 }
 
 func TestRunTCPCheck_DefaultClient_PanicsOnNative(t *testing.T) {
-	// This test confirms that without a mock, the code tries to use the WASM adapter
-
-	// which panics on native builds (via the stub).
-
 	cfg := config.Config{"host": "example.com", "port": 80}
 
 	assert.PanicsWithValue(t, "WASM TCP adapter not available in native build. Use WithTCPDialer() to inject a mock.", func() {

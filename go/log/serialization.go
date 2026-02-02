@@ -73,10 +73,6 @@ func toLogAttrWire(attr slog.Attr) LogAttrWire {
 			wire.Value = "<nil>"
 		}
 	case slog.KindGroup:
-		// Slog groups are flattened by the handler before reaching here in many implementations,
-		// but if we receive a group kind, we treat it as 'any' for the wire format
-		// since our flat structure doesn't support recursive groups well yet.
-		// A full implementation would flatten this recursively.
 		wire.Type = "group"
 		wire.Value = fmt.Sprintf("%v", attr.Value.Any())
 	case slog.KindLogValuer:

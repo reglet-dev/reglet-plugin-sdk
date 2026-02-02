@@ -30,15 +30,11 @@ func TestCapabilityValidator_Validate(t *testing.T) {
 	validator := validation.NewCapabilityValidator(registry)
 
 	t.Run("Valid Manifest", func(t *testing.T) {
-		// The original test used PluginManifest and GrantSet.
-		// The instruction implies a change to entities.Manifest and a slice of entities.Capability.
-		// I will adapt the test to use the new structure as implied by the instruction,
-		// while keeping the validation logic consistent with the existing validator setup.
 		manifest := &entities.Manifest{
 			Name:    "test-plugin",
 			Version: "1.0.0",
 			Capabilities: []entities.Capability{
-				{Category: "network", Resource: `{"rules": []}`}, // Assuming Resource is a JSON string for validation
+				{Category: "network", Resource: `{"rules": []}`},
 			},
 		}
 		res, err := validator.Validate(manifest)

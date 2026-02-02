@@ -37,29 +37,12 @@ func TestPerformTLSCheck(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 2. Execute the check using the custom bundle logic (unit test style)
-	// Note: We are testing the logic inside custom_bundle.go's performTLSCheck ideally,
-	// but here we are in main_test.go testing the flow.
-	// However, the test below creates a request and calls performTLSCheck directly (if exported)
-	// or effectively tests the logic. The original test called performTLSCheck.
-
-	// Since we are mocking the environment, we can just use the host/port we found.
 	t.Run("Valid TLS Check", func(t *testing.T) {
 		req := TLSCheckRequest{
 			Host:      host,
 			Port:      port,
 			TimeoutMs: 2000,
 		}
-
-		// We need to handle the self-signed cert of the test server.
-		// For the purpose of this example's host-function test, we'll
-		// use a modified version of performTLSCheck or just test the logic.
-		// In a real scenario, the host runtime would handle cert validation.
-
-		// Note: performTLSCheck in custom_bundle.go uses tls.Config{InsecureSkipVerify: false}.
-		// httptest.NewTLSServer uses a self-signed cert.
-		// To make this test pass without changing the production code to allow insecure,
-		// we would need to pass the root CA.
 
 		resp := performTLSCheckInternal(ctx, req, ts.TLS.Certificates)
 

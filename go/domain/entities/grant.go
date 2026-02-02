@@ -148,8 +148,6 @@ func (g *GrantSet) Clone() *GrantSet {
 
 // Difference returns capabilities in g that are not covered by other.
 // Useful for determining what capabilities still need to be granted.
-// Difference returns capabilities in g that are not covered by other.
-// Useful for determining what capabilities still need to be granted.
 func (g *GrantSet) Difference(other *GrantSet) *GrantSet {
 	if g == nil {
 		return nil

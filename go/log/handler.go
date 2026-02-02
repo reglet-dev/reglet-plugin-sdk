@@ -57,11 +57,6 @@ func (h *WasmLogHandler) Enabled(_ context.Context, level slog.Level) bool {
 
 // WithAttrs returns a new WasmLogHandler that includes the given attributes.
 func (h *WasmLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	// For this simplified implementation, we don't pre-encode attributes.
-	// A full implementation would accumulate them.
-	// Since we are just passing through to host, we can technically just return h,
-	// BUT slog expects a new handler instance.
-	// Since we don't store state yet, we just return a copy.
 	newHandler := *h
 	return &newHandler
 }

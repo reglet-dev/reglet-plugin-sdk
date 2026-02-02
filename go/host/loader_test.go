@@ -20,11 +20,7 @@ type LoaderIntegrationSuite struct {
 func (s *LoaderIntegrationSuite) SetupTest() {
 	// Create and configure registry
 	reg := registry.NewRegistry(registry.WithStrictMode(false))
-	// In the new system, we register schemas for validation.
-	// We can use mock schemas or just ensure "network", "fs", etc. are registered.
-	// For this test, we might simply skip strict validation if Loader allows,
-	// or register dummy schemas.
-	err := reg.Register("network", map[string]any{"type": "string"}) // Simplified schema
+	err := reg.Register("network", map[string]any{"type": "string"})
 	s.Require().NoError(err)
 	err = reg.Register("fs", map[string]any{"type": "string"})
 	s.Require().NoError(err)
@@ -94,15 +90,10 @@ func (s *LoaderIntegrationSuite) TestInvalidYAML() {
 name: "test-plugin"
 version: "1.0.0"
 capabilities:
-  network: "should be a list of objects" # Invalid structure for []Capability
+  network: "should be a list of objects"
 `
-	// Unmarshaling might fail or result in empty capabilities depending on YAML parser leniency
-	// struct expects []Capability.
-	// If it fails to unmarshal, LoadManifest should return error.
 	_, err := s.loader.LoadManifest([]byte(yaml), nil)
 	s.Require().Error(err)
-	// The parser might wrap the error
-	// s.Contains(err.Error(), "cannot unmarshal")
 }
 
 func (s *LoaderIntegrationSuite) TestMissingSchemaRegistration() {

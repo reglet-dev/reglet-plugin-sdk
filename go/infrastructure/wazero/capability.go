@@ -76,10 +76,7 @@ func WithCapabilityMiddleware(checker CapabilityChecker) hostfuncs.Middleware {
 				}
 			}
 
-			// For now, pass through to handler
-			// Specific capability checks should be done in the handlers
-			// based on the request content
-			_ = pluginName // Will be used when specific capability checks are added
+			_ = pluginName
 			return next(ctx, payload)
 		}
 	}

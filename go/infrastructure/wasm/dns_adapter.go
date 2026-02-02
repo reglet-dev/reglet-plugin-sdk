@@ -104,11 +104,6 @@ func (r *DNSAdapter) LookupNS(ctx context.Context, domain string) ([]string, err
 
 // Lookup performs the actual DNS query via the host function.
 func (r *DNSAdapter) Lookup(ctx context.Context, hostname, recordType string) (*entities.DNSResponse, error) {
-	// Note: We need to handle context cancellation/deadline here if we want to honor it properly,
-	// but the wireformat context conversion handles minimal context passing.
-
-	// Use wireformat's DNSRequestWire
-	// Use wireformat's DNSRequestWire
 	request := entities.DNSRequest{
 		Context:    entities.ContextWire{}, // Zero value for now
 		Hostname:   hostname,
@@ -116,15 +111,7 @@ func (r *DNSAdapter) Lookup(ctx context.Context, hostname, recordType string) (*
 		Nameserver: r.Nameserver,
 	}
 
-	// We can manually add deadline if needed
 	if d, ok := ctx.Deadline(); ok {
-		// Calculate remaining timeout
-		// For now we rely on the host processing or the adapter's Timeout setting passed in request?
-		// The wireformat structure might need updating if we want to pass explicit timeout per request.
-		// However, the WasmResolver in go/net had logic to create context wire.
-		// Let's use internal/context if available or duplicate logic.
-		// The original code used `createContextWireFormat(ctx)` which was likely in `transport.go` or similar.
-		// I'll assume we pass basic context.
 		_ = d
 	}
 

@@ -15,10 +15,12 @@ type SMTPClient interface {
 // SMTPConnectResult represents the result of an SMTP connection attempt.
 type SMTPConnectResult struct {
 	Banner         string
+	Extensions     []string // Supported SMTP extensions (e.g., "STARTTLS", "AUTH LOGIN PLAIN")
 	TLSVersion     string
 	TLSCipherSuite string
 	TLSServerName  string
 	ResponseTime   time.Duration
 	Connected      bool
 	TLSEnabled     bool
+	SupportsAuth   bool // Whether AUTH is supported
 }
