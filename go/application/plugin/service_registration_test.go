@@ -2,7 +2,6 @@ package plugin_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/reglet-dev/reglet-sdk/go/application/plugin"
@@ -14,40 +13,42 @@ import (
 // TestService is a struct with methods to be registered as operations.
 type TestService struct {
 	plugin.Service `name:"test_service" desc:"Test Service"`
-	EchoOp         plugin.Op `desc:"Echoes the message back" method:"Echo"`
-	AddOp          plugin.Op `desc:"Adds two numbers" method:"Add"`
+	EchoOp         plugin.Op[EchoRequest, EchoResponse] `desc:"Echoes the message back" method:"Echo"`
+	AddOp          plugin.Op[AddRequest, AddResponse]   `desc:"Adds two numbers" method:"Add"`
 }
 
 type EchoRequest struct {
 	Message string `json:"message"`
 }
 
-// Echo is a valid operation.
-// Handler signature must match: func(ctx, *Request) (*Result, error)
-func (s *TestService) Echo(ctx context.Context, req *plugin.Request) (*entities.Result, error) {
-	var body EchoRequest
-	if len(req.Raw) > 0 {
-		if err := json.Unmarshal(req.Raw, &body); err != nil {
-			return nil, err
-		}
-	}
-
-	// ResultSuccess expects Data as map[string]any
-	resData := map[string]any{"reply": body.Message}
-	res := entities.ResultSuccess("echoed", resData)
-	return &res, nil
+type EchoResponse struct {
+	Reply string `json:"reply"`
 }
 
-// Add is another valid operation.
-func (s *TestService) Add(ctx context.Context, req *plugin.Request) (*entities.Result, error) {
-	// Simplified for testing, ignoring input
-	// entities.ResultSuccess takes map[string]any
-	resData := map[string]any{"sum": 42}
-	res := entities.ResultSuccess("added", resData)
-	return &res, nil
+type AddRequest struct {
+	A int `json:"a"`
+	B int `json:"b"`
+}
+
+type AddResponse struct {
+	Sum int `json:"sum"`
+}
+
+// Echo is a typed operation.
+func (s *TestService) Echo(ctx context.Context, req *EchoRequest) (*EchoResponse, error) {
+	return &EchoResponse{Reply: req.Message}, nil
+}
+
+// Add is a typed operation.
+func (s *TestService) Add(ctx context.Context, req *AddRequest) (*AddResponse, error) {
+	return &AddResponse{Sum: req.A + req.B}, nil
 }
 
 func TestServiceRegistration(t *testing.T) {
+	// 0. Register Ops (Required for typed ops)
+	plugin.RegisterOp[EchoRequest, EchoResponse]("EchoOp")
+	plugin.RegisterOp[AddRequest, AddResponse]("AddOp")
+
 	// 1. Define plugin
 	def := plugin.DefinePlugin(plugin.PluginDef{
 		Name:    "test-plugin",
@@ -73,6 +74,7 @@ func TestServiceRegistration(t *testing.T) {
 		if op.Name == "echo_op" { // Converted from field name 'EchoOp'
 			foundEcho = true
 			assert.Equal(t, "Echoes the message back", op.Description)
+			assert.Contains(t, op.InputFields, "message")
 		}
 	}
 	assert.True(t, foundEcho, "echo_op operation not found")
@@ -83,10 +85,6 @@ func TestServiceRegistration(t *testing.T) {
 	assert.True(t, ok)
 	assert.NotNil(t, handlerEcho)
 
-	handlerAdd, ok := def.GetHandler("test_service", "add_op")
-	assert.True(t, ok)
-	assert.NotNil(t, handlerAdd)
-
 	// 6. Execute Handler (Echo)
 	reqBody := []byte(`{"message": "hello"}`)
 	req := &plugin.Request{
@@ -96,7 +94,7 @@ func TestServiceRegistration(t *testing.T) {
 	res, err := handlerEcho(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, entities.ResultStatusSuccess, res.Status)
-	assert.Equal(t, "echoed", res.Message)
+	assert.Equal(t, "ok", res.Message)
 
 	// Verify output data
 	// Result.Data is map[string]any

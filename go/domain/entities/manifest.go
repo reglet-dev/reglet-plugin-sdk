@@ -35,4 +35,31 @@ type ServiceManifest struct {
 type OperationManifest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+
+	// Input fields this operation requires (subset of plugin config)
+	InputFields []string `json:"input_fields,omitempty"`
+
+	// JSON Schema for Result.Data structure
+	OutputSchema json.RawMessage `json:"output_schema,omitempty"`
+
+	// Examples for documentation and testing
+	Examples []OperationExample `json:"examples,omitempty"`
+}
+
+// OperationExample provides a sample input/output pair.
+type OperationExample struct {
+	// Name is a short identifier (e.g., "basic", "mx_records")
+	Name string `json:"name"`
+
+	// Description explains what this example demonstrates
+	Description string `json:"description,omitempty"`
+
+	// Input is the example input as JSON
+	Input json.RawMessage `json:"input"`
+
+	// ExpectedOutput is the expected Result.Data as JSON (optional)
+	ExpectedOutput json.RawMessage `json:"expected_output,omitempty"`
+
+	// ExpectedError indicates this is a negative test case
+	ExpectedError string `json:"expected_error,omitempty"`
 }

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -13,10 +14,6 @@ import (
 // Service is embedded in service structs to provide metadata.
 // Tag format: `name:"service_name" desc:"Service description"`
 type Service struct{}
-
-// Op is a field type for declaring operations.
-// Tag format: `desc:"Operation description"`
-type Op struct{}
 
 // Request contains the context for a handler invocation.
 type Request struct {
@@ -68,13 +65,30 @@ func RegisterService(plugin *PluginDefinition, svc interface{}) error {
 				serviceName, op.methodName, op.name, op.fieldName)
 		}
 
-		handler, err := wrapMethod(method)
-		if err != nil {
-			return fmt.Errorf("service %s, operation %s: %w",
-				serviceName, op.name, err)
+		var handler HandlerFunc
+		var wrapErr error
+
+		if op.isTyped {
+			// Typed handler: func(ctx, *Input) (*Output, error)
+			handler, wrapErr = wrapTypedMethod(method, op.inputType, op.outputType)
+		} else {
+			// Legacy handler: func(ctx, *Request) (*Result, error)
+			handler, wrapErr = wrapLegacyMethod(method)
 		}
 
-		plugin.RegisterHandler(serviceName, serviceDesc, op.name, op.description, handler)
+		if wrapErr != nil {
+			return fmt.Errorf("service %s, operation %s: %w",
+				serviceName, op.name, wrapErr)
+		}
+
+		plugin.RegisterHandler(
+			serviceName, serviceDesc,
+			op.name, op.description,
+			handler,
+			op.inputType,
+			op.outputType,
+			op.examples,
+		)
 	}
 
 	return nil
@@ -103,6 +117,10 @@ type opInfo struct {
 	methodName  string // Method name to invoke
 	name        string // snake_case operation name
 	description string
+	isTyped     bool         // true if Op[I,O], false if legacy Op
+	inputType   reflect.Type // nil for legacy
+	outputType  reflect.Type // nil for legacy
+	examples    []any        // nil for legacy
 }
 
 // extractOperations finds all Op fields and extracts their metadata.
@@ -111,24 +129,41 @@ func extractOperations(t reflect.Type) ([]opInfo, error) {
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		if field.Type == reflect.TypeOf(Op{}) {
-			methodName := field.Tag.Get("method")
-			if methodName == "" {
-				// Default to field name if no method tag, but this implies name collision
-				// if method is defined on the same struct (which is invalid in Go).
-				// We assume if no tag, the user might have defined the method on the pointer
-				// and the field on the struct, but Go forbids name collision even then.
-				// So we really expect the tag for valid Go code.
-				methodName = field.Name
-			}
 
-			ops = append(ops, opInfo{
-				fieldName:   field.Name,
-				methodName:  methodName,
-				name:        toSnakeCase(field.Name),
-				description: field.Tag.Get("desc"),
-			})
+		// Check if field implements operation marker interface
+		if !isOpType(field.Type) {
+			continue
 		}
+
+		methodName := field.Tag.Get("method")
+		if methodName == "" {
+			// Default to field name if no method tag
+			methodName = field.Name
+		}
+
+		op := opInfo{
+			fieldName:   field.Name,
+			methodName:  methodName,
+			name:        toSnakeCase(field.Name),
+			description: field.Tag.Get("desc"),
+		}
+
+		// Check if typed (Op[I,O]) or legacy (Op)
+		if isTypedOp(field.Type) {
+			typeInfo, ok := getOpTypeInfo(field.Name)
+			if !ok {
+				// Require registration for typed ops
+				return nil, fmt.Errorf(
+					"Op field %s not registered - call plugin.RegisterOp[I,O](%q, ...) in init() before MustRegisterService",
+					field.Name, field.Name)
+			}
+			op.isTyped = true
+			op.inputType = typeInfo.inputType
+			op.outputType = typeInfo.outputType
+			op.examples = typeInfo.examples
+		}
+
+		ops = append(ops, op)
 	}
 
 	if len(ops) == 0 {
@@ -138,16 +173,100 @@ func extractOperations(t reflect.Type) ([]opInfo, error) {
 	return ops, nil
 }
 
-// wrapMethod wraps a reflected method as a HandlerFunc.
-func wrapMethod(method reflect.Value) (HandlerFunc, error) {
+// isOpType checks if a type is the generic Op[I,O].
+func isOpType(t reflect.Type) bool {
+	return t.Implements(reflect.TypeOf((*operation)(nil)).Elem())
+}
+
+// isTypedOp checks if a type is the generic Op[I,O].
+// Since we only have Op[I,O], this is effectively always true for fields passing isOpType.
+func isTypedOp(t reflect.Type) bool {
+	return strings.HasPrefix(t.Name(), "Op[")
+}
+
+// wrapTypedMethod wraps a typed handler as HandlerFunc.
+// Expected signature: func(ctx context.Context, in *I) (*O, error)
+func wrapTypedMethod(method reflect.Value, inputType, outputType reflect.Type) (HandlerFunc, error) {
 	methodType := method.Type()
 
-	// Expected signature: func(ctx context.Context, req *Request) (*entities.Result, error)
+	// Validate signature
+	if methodType.NumIn() != 2 || methodType.NumOut() != 2 {
+		return nil, fmt.Errorf("typed handler must have signature (context.Context, *Input) (*Output, error)")
+	}
+
+	// Validate context parameter
+	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
+	if !methodType.In(0).Implements(ctxType) {
+		return nil, fmt.Errorf("first parameter must be context.Context")
+	}
+
+	// Validate input parameter (must be pointer to inputType)
+	expectedInputPtr := reflect.PtrTo(inputType)
+	if methodType.In(1) != expectedInputPtr {
+		return nil, fmt.Errorf("second parameter must be *%s, got %s", inputType.Name(), methodType.In(1))
+	}
+
+	// Validate output parameter (must be pointer to outputType)
+	expectedOutputPtr := reflect.PtrTo(outputType)
+	if methodType.Out(0) != expectedOutputPtr {
+		return nil, fmt.Errorf("first return must be *%s, got %s", outputType.Name(), methodType.Out(0))
+	}
+
+	// Validate error return
+	errorType := reflect.TypeOf((*error)(nil)).Elem()
+	if !methodType.Out(1).Implements(errorType) {
+		return nil, fmt.Errorf("second return must be error")
+	}
+
+	return func(ctx context.Context, req *Request) (*entities.Result, error) {
+		// 1. Inject client into context
+		ctx = WithClient(ctx, req.Client)
+
+		// 2. Parse config JSON into input type
+		inputPtr := reflect.New(inputType)
+		if len(req.Raw) > 0 {
+			if err := json.Unmarshal(req.Raw, inputPtr.Interface()); err != nil {
+				return entities.ResultErrorPtr("config", fmt.Sprintf("failed to parse config: %v", err)), nil
+			}
+		}
+
+		// 3. Call the typed handler
+		args := []reflect.Value{
+			reflect.ValueOf(ctx),
+			inputPtr,
+		}
+		results := method.Call(args)
+
+		// 4. Handle error return
+		if !results[1].IsNil() {
+			err := results[1].Interface().(error)
+			return entities.ResultErrorPtr("execution", err.Error()), nil
+		}
+
+		// 5. Handle nil output
+		if results[0].IsNil() {
+			return entities.ResultSuccessPtr("ok", nil), nil
+		}
+
+		// 6. Convert output struct to map[string]any for Result.Data
+		output := results[0].Interface()
+		data, err := structToMap(output)
+		if err != nil {
+			return entities.ResultErrorPtr("output", fmt.Sprintf("failed to serialize output: %v", err)), nil
+		}
+
+		return entities.ResultSuccessPtr("ok", data), nil
+	}, nil
+}
+
+// wrapLegacyMethod wraps a legacy handler (existing signature).
+func wrapLegacyMethod(method reflect.Value) (HandlerFunc, error) {
+	methodType := method.Type()
+
 	if methodType.NumIn() != 2 || methodType.NumOut() != 2 {
 		return nil, fmt.Errorf("method must have signature (context.Context, *Request) (*entities.Result, error)")
 	}
 
-	// Validate input types
 	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
 	reqType := reflect.TypeOf((*Request)(nil))
 	if !methodType.In(0).Implements(ctxType) {
@@ -157,7 +276,6 @@ func wrapMethod(method reflect.Value) (HandlerFunc, error) {
 		return nil, fmt.Errorf("second parameter must be *plugin.Request")
 	}
 
-	// Validate output types
 	resultType := reflect.TypeOf((*entities.Result)(nil))
 	errorType := reflect.TypeOf((*error)(nil)).Elem()
 	if methodType.Out(0) != resultType {
@@ -186,6 +304,19 @@ func wrapMethod(method reflect.Value) (HandlerFunc, error) {
 
 		return result, err
 	}, nil
+}
+
+// structToMap converts a struct to map[string]any via JSON round-trip.
+func structToMap(v any) (map[string]any, error) {
+	bytes, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(bytes, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // toSnakeCase converts PascalCase to snake_case.

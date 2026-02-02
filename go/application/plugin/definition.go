@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/reglet-dev/reglet-sdk/go/application/schema"
@@ -37,6 +39,10 @@ type operationEntry struct {
 	handler     HandlerFunc
 	name        string
 	description string
+	// NEW: Type info for schema generation
+	inputType  reflect.Type
+	outputType reflect.Type
+	examples   []any
 }
 
 // DefinePlugin creates a new plugin definition.
@@ -70,10 +76,33 @@ func (p *PluginDefinition) Manifest() *entities.Manifest {
 	for name, svc := range p.services {
 		ops := make([]entities.OperationManifest, 0, len(svc.operations))
 		for _, op := range svc.operations {
-			ops = append(ops, entities.OperationManifest{
+			opManifest := entities.OperationManifest{
 				Name:        op.name,
 				Description: op.description,
-			})
+			}
+
+			// Generate input fields from input type (if available)
+			if op.inputType != nil {
+				opManifest.InputFields = extractFieldNames(op.inputType)
+			}
+
+			// Generate output schema from output type (if available)
+			if op.outputType != nil {
+				// We create a new instance of the type to ensure it works with GenerateSchema
+				// reflect.New returns a pointer to the type
+				val := reflect.New(op.outputType).Elem().Interface()
+				outputSchema, err := schema.GenerateSchema(val)
+				if err == nil {
+					opManifest.OutputSchema = outputSchema
+				}
+			}
+
+			// Convert examples to manifest format
+			if len(op.examples) > 0 {
+				opManifest.Examples = convertExamplesToManifest(op.examples)
+			}
+
+			ops = append(ops, opManifest)
 		}
 		services[name] = entities.ServiceManifest{
 			Name:        svc.name,
@@ -95,7 +124,13 @@ func (p *PluginDefinition) Manifest() *entities.Manifest {
 
 // RegisterHandler registers a handler for a service/operation.
 // Called internally by RegisterService.
-func (p *PluginDefinition) RegisterHandler(serviceName, serviceDesc, opName, opDesc string, handler HandlerFunc) {
+func (p *PluginDefinition) RegisterHandler(
+	serviceName, serviceDesc string,
+	opName, opDesc string,
+	handler HandlerFunc,
+	inputType, outputType reflect.Type,
+	examples []any,
+) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -113,6 +148,9 @@ func (p *PluginDefinition) RegisterHandler(serviceName, serviceDesc, opName, opD
 		name:        opName,
 		description: opDesc,
 		handler:     handler,
+		inputType:   inputType,
+		outputType:  outputType,
+		examples:    examples,
 	}
 }
 
@@ -132,4 +170,60 @@ func (p *PluginDefinition) GetHandler(serviceName, opName string) (HandlerFunc, 
 	}
 
 	return op.handler, true
+}
+
+// extractFieldNames gets JSON field names from a struct type.
+func extractFieldNames(t reflect.Type) []string {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+
+	var names []string
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "" || jsonTag == "-" {
+			continue
+		}
+		name := strings.Split(jsonTag, ",")[0]
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// convertExamplesToManifest converts typed examples to manifest format.
+func convertExamplesToManifest(examples []any) []entities.OperationExample {
+	result := make([]entities.OperationExample, 0, len(examples))
+
+	for _, ex := range examples {
+		v := reflect.ValueOf(ex)
+
+		name := v.FieldByName("Name").String()
+		desc := v.FieldByName("Description").String()
+		input := v.FieldByName("Input").Interface()
+		expectedOutput := v.FieldByName("ExpectedOutput")
+		expectedError := v.FieldByName("ExpectedError").String()
+
+		inputJSON, _ := json.Marshal(input)
+
+		var outputJSON json.RawMessage
+		if !expectedOutput.IsNil() {
+			outputJSON, _ = json.Marshal(expectedOutput.Interface())
+		}
+
+		result = append(result, entities.OperationExample{
+			Name:           name,
+			Description:    desc,
+			Input:          inputJSON,
+			ExpectedOutput: outputJSON,
+			ExpectedError:  expectedError,
+		})
+	}
+
+	return result
 }
