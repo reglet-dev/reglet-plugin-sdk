@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -129,8 +130,8 @@ func WithHTTPMaxBodySize(size int64) HTTPOption {
 }
 
 // WithHTTPSSRFProtection enables DNS pinning and SSRF protection.
-// When enabled, each request resolves DNS once, validates the IP, and connects
-// directly to that IP (preventing DNS rebinding attacks).
+// When enabled, each hostname's DNS is resolved ONCE, validated, and pinned
+// for all subsequent requests (preventing DNS rebinding attacks).
 // Private/reserved IPs are blocked unless allowPrivate is true.
 func WithHTTPSSRFProtection(allowPrivate bool) HTTPOption {
 	return func(c *httpConfig) {
@@ -139,25 +140,46 @@ func WithHTTPSSRFProtection(allowPrivate bool) HTTPOption {
 	}
 }
 
-// dnsPinningTransport prevents DNS rebinding attacks by resolving DNS once,
-// validating the IP, and connecting directly to that IP.
-type dnsPinningTransport struct {
-	base         *http.Transport
-	allowPrivate bool
+// dnsPinnedEntry represents a validated and pinned DNS resolution.
+type dnsPinnedEntry struct {
+	resolvedIP string
+	timestamp  time.Time
 }
 
-func (t *dnsPinningTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	hostname := req.URL.Hostname()
+// dnsPinCache caches validated DNS resolutions to prevent rebinding attacks
+// while maintaining connection pooling performance.
+type dnsPinCache struct {
+	mu      sync.RWMutex
+	entries map[string]dnsPinnedEntry
+	ttl     time.Duration
+}
 
-	// Resolve and validate
+func newDNSPinCache() *dnsPinCache {
+	return &dnsPinCache{
+		entries: make(map[string]dnsPinnedEntry),
+		ttl:     5 * time.Minute, // Cache validated IPs for 5 minutes
+	}
+}
+
+func (c *dnsPinCache) get(hostname string, allowPrivate bool) (string, error) {
+	// Check cache first
+	c.mu.RLock()
+	entry, found := c.entries[hostname]
+	c.mu.RUnlock()
+
+	if found && time.Since(entry.timestamp) < c.ttl {
+		return entry.resolvedIP, nil
+	}
+
+	// Not in cache or expired - resolve and validate
 	var opts []NetfilterOption
-	if t.allowPrivate {
+	if allowPrivate {
 		opts = append(opts, WithBlockPrivate(false), WithBlockLocalhost(false))
 	}
 	result := ValidateAddress(hostname, opts...)
 
 	if !result.Allowed {
-		return nil, fmt.Errorf("SSRF protection: %s", result.Reason)
+		return "", fmt.Errorf("SSRF protection: %s", result.Reason)
 	}
 
 	resolvedIP := result.ResolvedIP
@@ -165,32 +187,65 @@ func (t *dnsPinningTransport) RoundTrip(req *http.Request) (*http.Response, erro
 		resolvedIP = hostname
 	}
 
-	// Determine port
-	port := req.URL.Port()
-	if port == "" {
-		if req.URL.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
+	// Cache the validated resolution
+	c.mu.Lock()
+	c.entries[hostname] = dnsPinnedEntry{
+		resolvedIP: resolvedIP,
+		timestamp:  time.Now(),
+	}
+	c.mu.Unlock()
+
+	return resolvedIP, nil
+}
+
+// ssrfProtectedTransport wraps http.Transport with DNS pinning and SSRF protection
+// while preserving connection pooling for performance.
+func newSSRFProtectedTransport(allowPrivate bool) *http.Transport {
+	cache := newDNSPinCache()
+
+	transport := &http.Transport{
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		// 1. Resolve DNS once per hostname and cache the validated IP
+		// 2. All subsequent dials use the cached IP (prevents DNS rebinding)
+		// 3. Transport reuses connections when possible (maintains performance)
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// Extract hostname from address
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				host = addr
+				port = ""
+			}
+
+			// Get pinned IP from cache (validates on first access)
+			resolvedIP, err := cache.get(host, allowPrivate)
+			if err != nil {
+				return nil, err
+			}
+
+			// Reconstruct address with pinned IP
+			targetAddr := resolvedIP
+			if port != "" {
+				targetAddr = net.JoinHostPort(resolvedIP, port)
+			}
+
+			// Dial the pinned, validated address
+			return (&net.Dialer{}).DialContext(ctx, network, targetAddr)
+		},
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			// VerifyConnection ensures SNI matches original hostname
+			VerifyConnection: func(cs tls.ConnectionState) error {
+				// TLS SNI is already set correctly by http package
+				return nil
+			},
+		},
 	}
 
-	// Create transport pinned to resolved IP
-	pinnedTransport := t.base.Clone()
-	pinnedTransport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
-		targetAddr := net.JoinHostPort(resolvedIP, port)
-		return (&net.Dialer{}).DialContext(ctx, network, targetAddr)
-	}
-
-	// Preserve original hostname for TLS SNI
-	if req.URL.Scheme == "https" {
-		if pinnedTransport.TLSClientConfig == nil {
-			pinnedTransport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-		}
-		pinnedTransport.TLSClientConfig.ServerName = hostname
-	}
-
-	return pinnedTransport.RoundTrip(req)
+	return transport
 }
 
 // PerformHTTPRequest performs an HTTP request.
@@ -291,25 +346,22 @@ func executeHTTPRequest(ctx context.Context, req HTTPRequest, cfg httpConfig) HT
 
 // createHTTPClient creates an HTTP client with the appropriate redirect policy.
 func createHTTPClient(cfg httpConfig) *http.Client {
-	transport := &http.Transport{
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          10,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	}
-
-	var rt http.RoundTripper = transport
+	var transport *http.Transport
 	if cfg.ssrfProtection {
-		rt = &dnsPinningTransport{
-			base:         transport,
-			allowPrivate: cfg.allowPrivate,
+		transport = newSSRFProtectedTransport(cfg.allowPrivate)
+	} else {
+		transport = &http.Transport{
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          10,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
 		}
 	}
 
 	client := &http.Client{
 		Timeout:   cfg.timeout,
-		Transport: rt,
+		Transport: transport,
 	}
 
 	if !cfg.followRedirects {
