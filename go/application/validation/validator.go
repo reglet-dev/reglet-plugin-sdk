@@ -30,29 +30,34 @@ func NewCapabilityValidator(registry ports.CapabilityRegistry) ports.CapabilityV
 func (v *CapabilityValidator) Validate(manifest *entities.Manifest) (*entities.ValidationResult, error) {
 	result := &entities.ValidationResult{Valid: true}
 
-	if manifest.Capabilities == nil {
-		return result, nil
-	}
+	// Helper to validate a specific capability section
+	validateSection := func(kind string, data interface{}) {
+		if data == nil {
+			return
+		}
 
-	// Helper to validate a specific capability
-	validateCap := func(kind string, capData interface{}) {
+		// 1. Get Schema
 		schemaStr, ok := v.registry.GetSchema(kind)
 		if !ok {
 			result.Valid = false
 			result.Errors = append(result.Errors, entities.ValidationError{
 				Field:   kind,
-				Message: fmt.Sprintf("no schema registered for capability %s", kind),
+				Message: fmt.Sprintf("no schema registered for capability kind: %s", kind),
 			})
 			return
 		}
 
+		// 2. Add Resource (ignoring duplicates) and Compile
 		if err := v.compiler.AddResource(kind, strings.NewReader(schemaStr)); err != nil {
-			result.Valid = false
-			result.Errors = append(result.Errors, entities.ValidationError{
-				Field:   kind,
-				Message: fmt.Sprintf("failed to add schema resource for %s: %v", kind, err),
-			})
-			return
+			// If resource already exists, we can proceed. Ideally check err type, but string check is fallback.
+			if !strings.Contains(err.Error(), "already exists") {
+				result.Valid = false
+				result.Errors = append(result.Errors, entities.ValidationError{
+					Field:   kind,
+					Message: fmt.Sprintf("failed to add schema resource for %s: %v", kind, err),
+				})
+				return
+			}
 		}
 
 		sch, err := v.compiler.Compile(kind)
@@ -65,8 +70,8 @@ func (v *CapabilityValidator) Validate(manifest *entities.Manifest) (*entities.V
 			return
 		}
 
-		// Marshal capability to JSON (to interface{} for validation)
-		b, _ := json.Marshal(capData)
+		// 3. Marshal/Unmarshal to interface{} for validation
+		b, _ := json.Marshal(data)
 		var obj interface{}
 		if err := json.Unmarshal(b, &obj); err != nil {
 			result.Valid = false
@@ -77,6 +82,7 @@ func (v *CapabilityValidator) Validate(manifest *entities.Manifest) (*entities.V
 			return
 		}
 
+		// 4. Validate
 		if err := sch.Validate(obj); err != nil {
 			result.Valid = false
 			var ve *jsonschema.ValidationError
@@ -94,36 +100,32 @@ func (v *CapabilityValidator) Validate(manifest *entities.Manifest) (*entities.V
 		}
 	}
 
-	// Check for duplicates and validate each capability in the slice
-	seen := make(map[string]bool)
-	for _, cap := range manifest.Capabilities {
-		// Validate capability structure (e.g., Category must not be empty)
-		if cap.Category == "" {
-			result.Valid = false
-			result.Errors = append(result.Errors, entities.ValidationError{
-				Field:   "capabilities",
-				Message: "capability missing category",
-			})
-			continue
-		}
+	// Validate specific GrantSet sections
+	grants := manifest.Capabilities
 
-		key := cap.String() // Assuming entities.Capability has a String() method for uniqueness
-		if seen[key] {
-			result.Valid = false
-			result.Errors = append(result.Errors, entities.ValidationError{
-				Field:   "capabilities",
-				Message: fmt.Sprintf("duplicate capability: %s", key),
-			})
-			continue // Continue to check other capabilities
-		}
-		seen[key] = true
-
-		// Validate against schema using the helper function
-		validateCap(cap.Category, cap)
+	// Check Network
+	if grants.Network != nil && len(grants.Network.Rules) > 0 {
+		validateSection("network", grants.Network)
 	}
 
-	if len(result.Errors) > 0 {
-		result.Valid = false
+	// Check FS
+	if grants.FS != nil && len(grants.FS.Rules) > 0 {
+		validateSection("fs", grants.FS)
+	}
+
+	// Check Env
+	if grants.Env != nil && len(grants.Env.Variables) > 0 {
+		validateSection("env", grants.Env)
+	}
+
+	// Check Exec
+	if grants.Exec != nil && len(grants.Exec.Commands) > 0 {
+		validateSection("exec", grants.Exec)
+	}
+
+	// Check KV
+	if grants.KV != nil && len(grants.KV.Rules) > 0 {
+		validateSection("kv", grants.KV)
 	}
 
 	return result, nil

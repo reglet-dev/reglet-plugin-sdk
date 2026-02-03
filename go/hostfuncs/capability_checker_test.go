@@ -7,24 +7,12 @@ import (
 	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
 )
 
-func TestCapabilityChecker_Check_NoGrants(t *testing.T) {
+func TestCapabilityChecker_CheckExec_NoGrants(t *testing.T) {
 	checker := NewCapabilityChecker(nil)
 
-	err := checker.Check("unknown-plugin", "exec", "ls")
+	err := checker.CheckExec("unknown-plugin", entities.ExecCapabilityRequest{Command: "ls"})
 	if err == nil {
 		t.Error("expected error for plugin with no grants")
-	}
-}
-
-func TestCapabilityChecker_Check_UnknownKind(t *testing.T) {
-	grants := map[string]*entities.GrantSet{
-		"test-plugin": {},
-	}
-	checker := NewCapabilityChecker(grants)
-
-	err := checker.Check("test-plugin", "unknown", "pattern")
-	if err == nil {
-		t.Error("expected error for unknown capability kind")
 	}
 }
 
@@ -50,9 +38,9 @@ func TestCapabilityChecker_ExecCapability(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checker.Check("test-plugin", "exec", tt.command)
+			err := checker.CheckExec("test-plugin", entities.ExecCapabilityRequest{Command: tt.command})
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Check() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("CheckExec() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -80,9 +68,9 @@ func TestCapabilityChecker_EnvironmentCapability(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checker.Check("test-plugin", "env", tt.variable)
+			err := checker.CheckEnvironment("test-plugin", entities.EnvironmentRequest{Variable: tt.variable})
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Check() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("CheckEnvironment() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

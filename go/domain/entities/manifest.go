@@ -21,7 +21,7 @@ type Manifest struct {
 	ConfigSchema json.RawMessage `json:"config_schema" yaml:"config_schema"`
 
 	// Capabilities (http, dns, file, exec, etc.)
-	Capabilities []Capability `json:"capabilities" yaml:"capabilities"`
+	Capabilities GrantSet `json:"capabilities" yaml:"capabilities"`
 }
 
 // ServiceManifest describes a service and its operations.

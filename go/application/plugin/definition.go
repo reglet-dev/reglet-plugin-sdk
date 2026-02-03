@@ -16,7 +16,7 @@ type PluginDef struct {
 	Version      string
 	Description  string
 	Config       interface{} // Struct for schema generation
-	Capabilities []entities.Capability
+	Capabilities entities.GrantSet
 }
 
 // PluginDefinition holds the parsed plugin definition and registered services.

@@ -39,9 +39,17 @@ func (m *mockRenderer) Render(template []byte, data map[string]interface{}) ([]b
 
 func TestManifestExtractor_Extract(t *testing.T) {
 	t.Run("should extract capabilities successfully without template", func(t *testing.T) {
-		expectedCaps := []entities.Capability{
-			{Category: "network", Resource: "google.com"},
-			{Category: "fs", Resource: "/tmp", Action: "read"},
+		expectedCaps := entities.GrantSet{
+			Network: &entities.NetworkCapability{
+				Rules: []entities.NetworkRule{
+					{Hosts: []string{"google.com"}, Ports: []string{"*"}},
+				},
+			},
+			FS: &entities.FileSystemCapability{
+				Rules: []entities.FileSystemRule{
+					{Read: []string{"/tmp"}},
+				},
+			},
 		}
 
 		mockParser := new(MockManifestParser)
@@ -55,7 +63,7 @@ func TestManifestExtractor_Extract(t *testing.T) {
 		caps, err := ext.Extract(nil)
 		require.NoError(t, err)
 
-		// Helper to compare sets
+		// Verify capabilities present
 		assert.NotNil(t, caps)
 		assert.Equal(t, 1, len(caps.Network.Rules))
 		assert.Equal(t, 1, len(caps.FS.Rules))
@@ -119,7 +127,7 @@ func TestManifestExtractor_Extract(t *testing.T) {
 	t.Run("should return empty grant set if manifest has no capabilities", func(t *testing.T) {
 		mockParser := new(MockManifestParser)
 		mockParser.On("Parse", mock.Anything).Return(&entities.Manifest{
-			Capabilities: nil,
+			Capabilities: entities.GrantSet{},
 		}, nil)
 
 		ext := extractor.NewManifestExtractor([]byte("dummy"), extractor.WithParser(mockParser))
@@ -137,7 +145,7 @@ func TestManifestExtractor_Extract(t *testing.T) {
 		mockRenderer.On("Render", mock.Anything, mock.Anything).Return([]byte("rendered output"), nil)
 
 		mockParser := new(MockManifestParser)
-		mockParser.On("Parse", []byte("rendered output")).Return(&entities.Manifest{Capabilities: []entities.Capability{}}, nil)
+		mockParser.On("Parse", []byte("rendered output")).Return(&entities.Manifest{Capabilities: entities.GrantSet{}}, nil)
 
 		ext := extractor.NewManifestExtractor(
 			[]byte("template"),

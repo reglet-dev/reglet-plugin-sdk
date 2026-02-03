@@ -67,7 +67,12 @@ func (p *CliPrompter) PromptForCapabilities(reqs []entities.CapabilityRequest) (
 
 	_, _ = fmt.Fprintf(p.out, "Plugin requests the following capabilities:\n")
 	for _, req := range reqs {
-		_, _ = fmt.Fprintf(p.out, "- [%s] %s\n", req.RiskLevel, req.Description)
+		// Display with rule details if available
+		if reqRule, ok := req.Rule.(string); ok && reqRule != "" {
+			_, _ = fmt.Fprintf(p.out, "- [%s] %s (%s)\n", req.RiskLevel, req.Description, reqRule)
+		} else {
+			_, _ = fmt.Fprintf(p.out, "- [%s] %s\n", req.RiskLevel, req.Description)
+		}
 	}
 	_, _ = fmt.Fprintf(p.out, "Grant all? [y/n]: ")
 

@@ -12,11 +12,6 @@ import (
 // CapabilityChecker validates operations against granted capabilities.
 // It can be used as middleware or directly in handler implementations.
 type CapabilityChecker interface {
-	// Check verifies if a capability is granted.
-	// kind is the capability type (e.g., "network", "fs", "exec", "env").
-	// pattern is the capability pattern to check.
-	Check(pluginName, kind, pattern string) error
-
 	// CheckNetwork validates network operations.
 	CheckNetwork(pluginName string, req entities.NetworkRequest) error
 
@@ -28,58 +23,6 @@ type CapabilityChecker interface {
 
 	// CheckExec validates command execution.
 	CheckExec(pluginName string, req entities.ExecCapabilityRequest) error
-}
-
-// CapabilityMiddlewareConfig configures capability checking for host functions.
-type CapabilityMiddlewareConfig struct {
-	// Checker is the capability checker to use.
-	Checker CapabilityChecker
-
-	// FunctionCapabilities maps function names to required capabilities.
-	// Each entry specifies the capability kind and a function to extract
-	// the pattern from the request.
-	FunctionCapabilities map[string]CapabilityRequirement
-}
-
-// CapabilityRequirement specifies the capability needed for a function.
-type CapabilityRequirement struct {
-	// PatternExtractor extracts the capability pattern from the request.
-	// For example, for http_request, it might extract the target host.
-	PatternExtractor func(request []byte) (string, error)
-
-	// Kind is the capability type (e.g., "network", "exec").
-	Kind string
-}
-
-// WithCapabilityMiddleware creates a middleware that checks capabilities
-// before invoking handlers.
-func WithCapabilityMiddleware(checker CapabilityChecker) hostfuncs.Middleware {
-	return func(next hostfuncs.ByteHandler) hostfuncs.ByteHandler {
-		return func(ctx context.Context, payload []byte) ([]byte, error) {
-			// Get function name from context
-			hctx, ok := ctx.(hostfuncs.HostContext)
-			if !ok {
-				return next(ctx, payload)
-			}
-
-			funcName := hctx.FunctionName()
-			if funcName == "" {
-				return next(ctx, payload)
-			}
-
-			// Get plugin name - try context first, then look for module name
-			pluginName, _ := PluginNameFromContext(ctx)
-			if pluginName == "" {
-				// Fallback to any plugin name set in HostContext
-				if name, ok := ctx.Value(pluginNameKey).(string); ok {
-					pluginName = name
-				}
-			}
-
-			_ = pluginName
-			return next(ctx, payload)
-		}
-	}
 }
 
 // WazeroCapabilityHandler creates a wazero GoModuleFunc that wraps a handler
@@ -102,7 +45,8 @@ func WazeroCapabilityHandler(
 // This allows the SDK's exec security features to use the capability checker.
 func NewCapabilityGetterFromChecker(checker CapabilityChecker) hostfuncs.CapabilityGetter {
 	return func(pluginName, capability string) bool {
-		err := checker.Check(pluginName, "exec", capability)
+		//  Strictly treat the string as an Exec command request
+		err := checker.CheckExec(pluginName, entities.ExecCapabilityRequest{Command: capability})
 		return err == nil
 	}
 }

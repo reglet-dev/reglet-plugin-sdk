@@ -13,7 +13,7 @@ import (
 func TestCliPrompter_PromptForCapability(t *testing.T) {
 	req := entities.CapabilityRequest{
 		Description: "Connect to google.com",
-		RiskLevel:   entities.RiskLevelLow,
+		RiskLevel:   entities.RiskLow,
 	}
 
 	t.Run("Grant", func(t *testing.T) {
@@ -55,7 +55,7 @@ func TestCliPrompter_PromptForCapabilities(t *testing.T) {
 	reqs := []entities.CapabilityRequest{
 		{
 			Description: "Network access",
-			RiskLevel:   entities.RiskLevelLow,
+			RiskLevel:   entities.RiskLow,
 			Rule: &entities.NetworkCapability{
 				Rules: []entities.NetworkRule{
 					{Hosts: []string{"example.com"}, Ports: []string{"443"}},
@@ -64,7 +64,7 @@ func TestCliPrompter_PromptForCapabilities(t *testing.T) {
 		},
 		{
 			Description: "File write",
-			RiskLevel:   entities.RiskLevelMedium,
+			RiskLevel:   entities.RiskMedium,
 			Rule: &entities.FileSystemCapability{
 				Rules: []entities.FileSystemRule{
 					{Write: []string{"/tmp/out"}},

@@ -62,57 +62,6 @@ func (e *ManifestExtractor) Extract(config map[string]interface{}) (*entities.Gr
 		return nil, fmt.Errorf("failed to parse manifest: %w", err)
 	}
 
-	if manifest.Capabilities == nil {
-		return &entities.GrantSet{}, nil
-	}
-
-	return e.convertCapabilities(manifest.Capabilities), nil
-}
-
-func (e *ManifestExtractor) convertCapabilities(caps []entities.Capability) *entities.GrantSet {
-	gs := &entities.GrantSet{}
-	for _, cap := range caps {
-		e.convertCapability(gs, cap)
-	}
-	return gs
-}
-
-func (e *ManifestExtractor) convertCapability(gs *entities.GrantSet, capability entities.Capability) {
-	switch capability.Category {
-	case "network", "http": // Handle http as network for now
-		host := capability.Resource
-		port := "*"
-		if gs.Network == nil {
-			gs.Network = &entities.NetworkCapability{}
-		}
-		gs.Network.Rules = append(gs.Network.Rules, entities.NetworkRule{
-			Hosts: []string{host},
-			Ports: []string{port},
-		})
-	case "fs":
-		if gs.FS == nil {
-			gs.FS = &entities.FileSystemCapability{}
-		}
-		read := []string{}
-		write := []string{}
-		if capability.Action == "write" {
-			write = append(write, capability.Resource)
-		} else {
-			read = append(read, capability.Resource)
-		}
-		gs.FS.Rules = append(gs.FS.Rules, entities.FileSystemRule{
-			Read:  read,
-			Write: write,
-		})
-	case "exec":
-		if gs.Exec == nil {
-			gs.Exec = &entities.ExecCapability{}
-		}
-		gs.Exec.Commands = append(gs.Exec.Commands, capability.Resource)
-	case "env":
-		if gs.Env == nil {
-			gs.Env = &entities.EnvironmentCapability{}
-		}
-		gs.Env.Variables = append(gs.Env.Variables, capability.Resource)
-	}
+	// Direct return of the GrantSet pointer
+	return &manifest.Capabilities, nil
 }

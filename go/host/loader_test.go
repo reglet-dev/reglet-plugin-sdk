@@ -20,15 +20,15 @@ type LoaderIntegrationSuite struct {
 func (s *LoaderIntegrationSuite) SetupTest() {
 	// Create and configure registry
 	reg := registry.NewRegistry(registry.WithStrictMode(false))
-	err := reg.Register("network", map[string]any{"type": "string"})
+	err := reg.Register("network", map[string]any{"type": "object"})
 	s.Require().NoError(err)
-	err = reg.Register("fs", map[string]any{"type": "string"})
+	err = reg.Register("fs", map[string]any{"type": "object"})
 	s.Require().NoError(err)
-	err = reg.Register("env", map[string]any{"type": "string"})
+	err = reg.Register("env", map[string]any{"type": "object"})
 	s.Require().NoError(err)
-	err = reg.Register("exec", map[string]any{"type": "string"})
+	err = reg.Register("exec", map[string]any{"type": "object"})
 	s.Require().NoError(err)
-	err = reg.Register("kv", map[string]any{"type": "string"})
+	err = reg.Register("kv", map[string]any{"type": "object"})
 	s.Require().NoError(err)
 
 	s.registry = reg.(*registry.Registry)
@@ -40,24 +40,27 @@ func (s *LoaderIntegrationSuite) TestValidManifest() {
 name: "test-plugin"
 version: "1.0.0"
 capabilities:
-  - kind: network
-    pattern: "outbound:example.com:80"
-  - kind: fs
-    pattern: "read:/data/**"
+  network:
+    rules:
+      - hosts: ["example.com"]
+        ports: ["80"]
+  fs:
+    rules:
+      - read: ["/data/**"]
 `
 	manifest, err := s.loader.LoadManifest([]byte(yaml), nil)
 	s.Require().NoError(err)
 	s.Equal("test-plugin", manifest.Name)
-	s.Len(manifest.Capabilities, 2)
 
-	// Check capabilities
-	// Note: YAML unmarshal might not preserve order if it was a map, but here it's a list.
-	// Order should be preserved.
-	s.Equal("network", manifest.Capabilities[0].Category)
-	s.Equal("outbound:example.com:80", manifest.Capabilities[0].Resource)
+	// Check GrantSet structure
+	s.NotNil(manifest.Capabilities.Network)
+	s.Len(manifest.Capabilities.Network.Rules, 1)
+	s.Equal([]string{"example.com"}, manifest.Capabilities.Network.Rules[0].Hosts)
+	s.Equal([]string{"80"}, manifest.Capabilities.Network.Rules[0].Ports)
 
-	s.Equal("fs", manifest.Capabilities[1].Category)
-	s.Equal("read:/data/**", manifest.Capabilities[1].Resource)
+	s.NotNil(manifest.Capabilities.FS)
+	s.Len(manifest.Capabilities.FS.Rules, 1)
+	s.Equal([]string{"/data/**"}, manifest.Capabilities.FS.Rules[0].Read)
 }
 
 func (s *LoaderIntegrationSuite) TestManifestWithMultipleRules() {
@@ -65,24 +68,33 @@ func (s *LoaderIntegrationSuite) TestManifestWithMultipleRules() {
 name: "multi-rule-plugin"
 version: "1.0.0"
 capabilities:
-  - kind: network
-    pattern: "outbound:api.internal:80"
-  - kind: network
-    pattern: "outbound:*.external.com:443"
-  - kind: kv
-    pattern: "read:config/*"
-  - kind: kv
-    pattern: "read-write:cache/*"
+  network:
+    rules:
+      - hosts: ["api.internal"]
+        ports: ["80"]
+      - hosts: ["*.external.com"]
+        ports: ["443"]
+  kv:
+    rules:
+      - op: read
+        keys: ["config/*"]
+      - op: read-write
+        keys: ["cache/*"]
 `
 	manifest, err := s.loader.LoadManifest([]byte(yaml), nil)
 	s.Require().NoError(err)
-	s.Len(manifest.Capabilities, 4)
 
-	s.Equal("network", manifest.Capabilities[0].Category)
-	s.Equal("outbound:api.internal:80", manifest.Capabilities[0].Resource)
+	// Check network rules
+	s.NotNil(manifest.Capabilities.Network)
+	s.Len(manifest.Capabilities.Network.Rules, 2)
+	s.Equal([]string{"api.internal"}, manifest.Capabilities.Network.Rules[0].Hosts)
+	s.Equal([]string{"80"}, manifest.Capabilities.Network.Rules[0].Ports)
+	s.Equal([]string{"*.external.com"}, manifest.Capabilities.Network.Rules[1].Hosts)
+	s.Equal([]string{"443"}, manifest.Capabilities.Network.Rules[1].Ports)
 
-	s.Equal("network", manifest.Capabilities[1].Category)
-	s.Equal("outbound:*.external.com:443", manifest.Capabilities[1].Resource)
+	// Check KV rules
+	s.NotNil(manifest.Capabilities.KV)
+	s.Len(manifest.Capabilities.KV.Rules, 2)
 }
 
 func (s *LoaderIntegrationSuite) TestInvalidYAML() {
@@ -90,7 +102,7 @@ func (s *LoaderIntegrationSuite) TestInvalidYAML() {
 name: "test-plugin"
 version: "1.0.0"
 capabilities:
-  network: "should be a list of objects"
+  network: "should be an object"
 `
 	_, err := s.loader.LoadManifest([]byte(yaml), nil)
 	s.Require().Error(err)
@@ -105,12 +117,14 @@ func (s *LoaderIntegrationSuite) TestMissingSchemaRegistration() {
 name: "test-plugin"
 version: "1.0.0"
 capabilities:
-  - kind: network
-    pattern: "outbound:example.com:443"
+  network:
+    rules:
+      - hosts: ["example.com"]
+        ports: ["443"]
 `
 	_, err := loaderEmpty.LoadManifest([]byte(yaml), nil)
 	s.Require().Error(err)
-	s.Contains(err.Error(), "no schema registered for capability network") // If validation is enabled
+	s.Contains(err.Error(), "no schema registered for capability kind: network")
 }
 
 func (s *LoaderIntegrationSuite) TestEnvCapability() {
@@ -118,14 +132,13 @@ func (s *LoaderIntegrationSuite) TestEnvCapability() {
 name: "env-plugin"
 version: "1.0.0"
 capabilities:
-  - kind: env
-    pattern: "APP_*,DEBUG"
+  env:
+    vars: ["APP_*", "DEBUG"]
 `
 	manifest, err := s.loader.LoadManifest([]byte(yaml), nil)
 	s.Require().NoError(err)
-	s.Len(manifest.Capabilities, 1)
-	s.Equal("env", manifest.Capabilities[0].Category)
-	s.Equal("APP_*,DEBUG", manifest.Capabilities[0].Resource)
+	s.NotNil(manifest.Capabilities.Env)
+	s.Equal([]string{"APP_*", "DEBUG"}, manifest.Capabilities.Env.Variables)
 }
 
 func (s *LoaderIntegrationSuite) TestExecCapability() {
@@ -133,14 +146,13 @@ func (s *LoaderIntegrationSuite) TestExecCapability() {
 name: "exec-plugin"
 version: "1.0.0"
 capabilities:
-  - kind: exec
-    pattern: "/usr/bin/ls,/usr/bin/cat"
+  exec:
+    commands: ["/usr/bin/ls", "/usr/bin/cat"]
 `
 	manifest, err := s.loader.LoadManifest([]byte(yaml), nil)
 	s.Require().NoError(err)
-	s.Len(manifest.Capabilities, 1)
-	s.Equal("exec", manifest.Capabilities[0].Category)
-	s.Equal("/usr/bin/ls,/usr/bin/cat", manifest.Capabilities[0].Resource)
+	s.NotNil(manifest.Capabilities.Exec)
+	s.Equal([]string{"/usr/bin/ls", "/usr/bin/cat"}, manifest.Capabilities.Exec.Commands)
 }
 
 func TestLoaderIntegrationSuite(t *testing.T) {
@@ -151,9 +163,9 @@ func TestLoaderIntegrationSuite(t *testing.T) {
 func TestLoader_Integration(t *testing.T) {
 	// 1. Setup Registry
 	reg := registry.NewRegistry(registry.WithStrictMode(false))
-	err := reg.Register("network", map[string]any{"type": "string"})
+	err := reg.Register("network", map[string]any{"type": "object"})
 	require.NoError(t, err)
-	err = reg.Register("fs", map[string]any{"type": "string"})
+	err = reg.Register("fs", map[string]any{"type": "object"})
 	require.NoError(t, err)
 
 	// 2. Setup Loader
@@ -166,14 +178,16 @@ func TestLoader_Integration(t *testing.T) {
 name: "test-plugin"
 version: "1.0.0"
 capabilities:
-  - kind: network
-    pattern: "outbound:example.com:80"
+  network:
+    rules:
+      - hosts: ["example.com"]
+        ports: ["80"]
 `
 		manifest, err := loader.LoadManifest([]byte(yaml), nil)
 		require.NoError(t, err)
 		assert.Equal(t, "test-plugin", manifest.Name)
-		assert.Len(t, manifest.Capabilities, 1)
-		assert.Equal(t, "network", manifest.Capabilities[0].Category)
+		assert.NotNil(t, manifest.Capabilities.Network)
+		assert.Len(t, manifest.Capabilities.Network.Rules, 1)
 	})
 
 	t.Run("Missing Capability Registration", func(t *testing.T) {
@@ -184,11 +198,13 @@ capabilities:
 name: "test-plugin"
 version: "1.0.0"
 capabilities:
-  - kind: network
-    pattern: "outbound:example.com:443"
+  network:
+    rules:
+      - hosts: ["example.com"]
+        ports: ["443"]
 `
 		_, err := loaderEmpty.LoadManifest([]byte(yaml2), nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no schema registered for capability network")
+		assert.Contains(t, err.Error(), "no schema registered for capability kind: network")
 	})
 }

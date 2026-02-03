@@ -74,9 +74,6 @@ func TestNewResolver_WithDNSTimeout_IgnoresInvalid(t *testing.T) {
 }
 
 func TestNewResolver_WithRetries(t *testing.T) {
-	// Retries are parsed into config but ignored by WASM adapter currently.
-	// We can verify the config logic works by inspecting the unexported config struct if we want,
-	// but mostly we want to ensure calling it doesn't break anything.
 	resolver := NewResolver(WithRetries(5))
 	require.NotNil(t, resolver)
 }

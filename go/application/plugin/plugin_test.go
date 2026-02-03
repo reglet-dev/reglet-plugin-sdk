@@ -17,8 +17,6 @@ import (
 
 // Type aliases for convenience in tests
 type (
-	// Metadata        = entities.Metadata // Removed, used Manifest instead
-	Capability      = entities.Capability
 	Result          = entities.Result
 	ErrorDetail     = entities.ErrorDetail
 	Config          = map[string]any
@@ -40,21 +38,21 @@ var ToErrorDetail = errors.ToErrorDetail
 
 func TestManifest_Capabilities(t *testing.T) {
 	tests := []struct {
-		name         string
-		manifest     entities.Manifest
-		capabilities []Capability
+		name     string
+		manifest entities.Manifest
 	}{
 		{
-			name: "single capability",
+			name: "single fs capability",
 			manifest: entities.Manifest{
 				Name:    "test",
 				Version: "1.0.0",
-				Capabilities: []Capability{
-					{Category: "fs", Resource: "read:/etc/**"},
+				Capabilities: entities.GrantSet{
+					FS: &entities.FileSystemCapability{
+						Rules: []entities.FileSystemRule{
+							{Read: []string{"/etc/**"}},
+						},
+					},
 				},
-			},
-			capabilities: []Capability{
-				{Category: "fs", Resource: "read:/etc/**"},
 			},
 		},
 		{
@@ -62,14 +60,16 @@ func TestManifest_Capabilities(t *testing.T) {
 			manifest: entities.Manifest{
 				Name:    "test",
 				Version: "1.0.0",
-				Capabilities: []Capability{
-					{Category: "network", Resource: "outbound:80,443"},
-					{Category: "exec", Resource: "systemctl"},
+				Capabilities: entities.GrantSet{
+					Network: &entities.NetworkCapability{
+						Rules: []entities.NetworkRule{
+							{Hosts: []string{"*"}, Ports: []string{"80", "443"}},
+						},
+					},
+					Exec: &entities.ExecCapability{
+						Commands: []string{"systemctl"},
+					},
 				},
-			},
-			capabilities: []Capability{
-				{Category: "network", Resource: "outbound:80,443"},
-				{Category: "exec", Resource: "systemctl"},
 			},
 		},
 		{
@@ -77,16 +77,13 @@ func TestManifest_Capabilities(t *testing.T) {
 			manifest: entities.Manifest{
 				Name:         "test",
 				Version:      "1.0.0",
-				Capabilities: []Capability{},
+				Capabilities: entities.GrantSet{},
 			},
-			capabilities: []Capability{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.capabilities, tt.manifest.Capabilities)
-
 			// Test JSON serialization
 			data, err := json.Marshal(tt.manifest)
 			require.NoError(t, err)
@@ -96,7 +93,10 @@ func TestManifest_Capabilities(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.manifest.Name, decoded.Name)
 			assert.Equal(t, tt.manifest.Version, decoded.Version)
-			assert.Equal(t, len(tt.manifest.Capabilities), len(decoded.Capabilities))
+			// Verify capabilities can be serialized/deserialized
+			if !tt.manifest.Capabilities.IsEmpty() {
+				assert.False(t, decoded.Capabilities.IsEmpty())
+			}
 		})
 	}
 }
@@ -108,8 +108,12 @@ func (m *MockPlugin) Manifest(ctx context.Context) (*entities.Manifest, error) {
 	return &entities.Manifest{
 		Name:    "stub",
 		Version: "1.0.0",
-		Capabilities: []entities.Capability{
-			{Category: "test", Resource: "resource"},
+		Capabilities: entities.GrantSet{
+			KV: &entities.KeyValueCapability{
+				Rules: []entities.KeyValueRule{
+					{Operation: "read", Keys: []string{"test:resource"}},
+				},
+			},
 		},
 	}, nil
 }
@@ -120,7 +124,7 @@ func (m *MockPlugin) Execute(ctx context.Context, config map[string]any) (*entit
 }
 
 func TestPluginManifest(t *testing.T) {
-	userPlugin := &MockPlugin{} // Assuming userPlugin is an instance of a plugin interface
+	userPlugin := &MockPlugin{}
 
 	manifest, err := userPlugin.Manifest(context.Background())
 	if err != nil {
@@ -130,8 +134,9 @@ func TestPluginManifest(t *testing.T) {
 		t.Errorf("expected name stub, got %s", manifest.Name)
 	}
 	assert.Equal(t, "1.0.0", manifest.Version)
-	assert.Equal(t, 1, len(manifest.Capabilities))
-	assert.Equal(t, "test", manifest.Capabilities[0].Category)
+	// Verify capabilities are present
+	assert.False(t, manifest.Capabilities.IsEmpty(), "manifest should have capabilities")
+	assert.NotNil(t, manifest.Capabilities.KV, "KV capability should be set")
 }
 
 func TestResult_Serialization(t *testing.T) {

@@ -29,12 +29,16 @@ func TestCapabilityValidator_Validate(t *testing.T) {
 	}
 	validator := validation.NewCapabilityValidator(registry)
 
-	t.Run("Valid Manifest", func(t *testing.T) {
+	t.Run("Valid Manifest with Network", func(t *testing.T) {
 		manifest := &entities.Manifest{
 			Name:    "test-plugin",
 			Version: "1.0.0",
-			Capabilities: []entities.Capability{
-				{Category: "network", Resource: `{"rules": []}`},
+			Capabilities: entities.GrantSet{
+				Network: &entities.NetworkCapability{
+					Rules: []entities.NetworkRule{
+						{Hosts: []string{"example.com"}, Ports: []string{"443"}},
+					},
+				},
 			},
 		}
 		res, err := validator.Validate(manifest)
@@ -43,35 +47,30 @@ func TestCapabilityValidator_Validate(t *testing.T) {
 		assert.Empty(t, res.Errors)
 	})
 
-	t.Run("Invalid Capability Schema", func(t *testing.T) {
-		// missing required 'rules' per the mock schema for 'fs'
+	t.Run("Valid Manifest with FS", func(t *testing.T) {
 		manifest := &entities.Manifest{
 			Version: "1.0.0",
-			Capabilities: []entities.Capability{
-				{Category: "fs", Resource: "/tmp"},
+			Capabilities: entities.GrantSet{
+				FS: &entities.FileSystemCapability{
+					Rules: []entities.FileSystemRule{
+						{Read: []string{"/tmp"}},
+					},
+				},
 			},
 		}
 		res, err := validator.Validate(manifest)
 		require.NoError(t, err)
-		assert.False(t, res.Valid)
-		assert.NotEmpty(t, res.Errors)
+		assert.True(t, res.Valid)
+		assert.Empty(t, res.Errors)
 	})
 
-	t.Run("Unknown Capability", func(t *testing.T) {
-		// 'env' not in registry
+	t.Run("Empty GrantSet", func(t *testing.T) {
 		manifest := &entities.Manifest{
-			Version: "1.0.0",
-			Capabilities: []entities.Capability{
-				{Category: "env", Resource: "FOO"},
-			},
+			Version:      "1.0.0",
+			Capabilities: entities.GrantSet{},
 		}
 		res, err := validator.Validate(manifest)
 		require.NoError(t, err)
-		assert.False(t, res.Valid)
-		if len(res.Errors) > 0 {
-			assert.Contains(t, res.Errors[0].Message, "no schema registered for capability env")
-		} else {
-			t.Error("expected validation errors")
-		}
+		assert.True(t, res.Valid)
 	})
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
@@ -66,137 +65,6 @@ func NewCapabilityChecker(caps map[string]*entities.GrantSet, opts ...Capability
 		grantedCapabilities: caps,
 		cwd:                 cfg.cwd,
 	}
-}
-
-// Check verifies if a requested capability is granted for a specific plugin.
-// This method parses the WASM protocol pattern format used by plugins:
-//   - network: "outbound:<port>" or "outbound:<host>"
-//   - fs: "read:<path>" or "write:<path>"
-//   - env: "<variable>"
-//   - exec: "<command>"
-func (c *CapabilityChecker) Check(pluginName, kind, pattern string) error {
-	grants, ok := c.grantedCapabilities[pluginName]
-	if !ok || grants == nil {
-		return fmt.Errorf("no capabilities granted to plugin %s", pluginName)
-	}
-
-	var allowed bool
-	switch kind {
-	case "network":
-		allowed = c.parseNetworkPattern(pattern, grants)
-	case "fs":
-		allowed = c.parseFileSystemPattern(pattern, grants)
-	case "env":
-		allowed = c.parseEnvironmentPattern(pattern, grants)
-	case "exec":
-		allowed = c.parseExecPattern(pattern, grants)
-	default:
-		return fmt.Errorf("unknown capability kind: %s", kind)
-	}
-
-	if allowed {
-		return nil
-	}
-
-	return fmt.Errorf("capability denied: %s:%s", kind, pattern)
-}
-
-// parseNetworkPattern parses WASM protocol network patterns like "outbound:443" or "outbound:hostname".
-func (c *CapabilityChecker) parseNetworkPattern(pattern string, grants *entities.GrantSet) bool {
-	parts := strings.SplitN(pattern, ":", 2)
-	if len(parts) != 2 {
-		return false
-	}
-
-	// Legacy format: "outbound:<port_or_host>"
-	portOrHost := parts[1]
-
-	// Check if it's a port number
-	if port, err := strconv.Atoi(portOrHost); err == nil {
-		// It's a port - check with wildcard host
-		req := entities.NetworkRequest{Host: "*", Port: port}
-		return c.policy.CheckNetwork(req, grants)
-	}
-
-	// It's a hostname - check with any port
-	// For private network check, we use a special case
-	if portOrHost == "private" {
-		// Special case for private network access
-		req := entities.NetworkRequest{Host: "127.0.0.1", Port: 0}
-		return c.policy.CheckNetwork(req, grants)
-	}
-
-	// Try as a host pattern - check with common ports
-	// The legacy pattern "outbound:hostname" means allow any port to that host
-	// CRITICAL: We use EvaluateNetwork (silent) here even if silent=false.
-	// This prevents "Permission Denied" logs from appearing if this broad check fails
-	// but a specific port probe (below) succeeds. We only log at the very end if ALL checks fail.
-	req := entities.NetworkRequest{Host: portOrHost, Port: 0}
-	if c.policy.EvaluateNetwork(req, grants) {
-		return true
-	}
-
-	// Also try common ports (80, 443) as fallback
-	// Candidates to probe:
-	// 1. {Host: host, Port: 0}  (Any port)
-	// 2. {Host: host, Port: 80} (HTTP)
-	// 3. {Host: host, Port: 443} (HTTPS)
-	// 4. {Host: host, Port: 0}  (Duplicate of 1, but part of old loop logic, simplifies migration)
-
-	candidates := []int{80, 443}
-
-	for _, port := range candidates {
-		req := entities.NetworkRequest{Host: portOrHost, Port: port}
-		// ALWAYS use Evaluate (silent) for probing
-		if c.policy.EvaluateNetwork(req, grants) {
-			return true
-		}
-	}
-
-	// If we got here, ALL probes failed.
-	// Log the primary failure to give the user a useful error message.
-	// We use Port: 0 to indicate the generic "host" request failed.
-	req = entities.NetworkRequest{Host: portOrHost, Port: 0}
-	// This will return false and Log to stderr
-	c.policy.CheckNetwork(req, grants)
-
-	return false
-}
-
-// parseFileSystemPattern parses WASM protocol filesystem patterns like "read:/path" or "write:/path".
-func (c *CapabilityChecker) parseFileSystemPattern(pattern string, grants *entities.GrantSet) bool {
-	parts := strings.SplitN(pattern, ":", 2)
-	if len(parts) != 2 {
-		return false
-	}
-
-	operation := parts[0]
-	path := parts[1]
-
-	req := entities.FileSystemRequest{
-		Operation: operation,
-		Path:      path,
-	}
-
-	return c.policy.CheckFileSystem(req, grants)
-}
-
-// parseEnvironmentPattern parses WASM protocol environment variable patterns.
-func (c *CapabilityChecker) parseEnvironmentPattern(pattern string, grants *entities.GrantSet) bool {
-	req := entities.EnvironmentRequest{
-		Variable: pattern,
-	}
-
-	return c.policy.CheckEnvironment(req, grants)
-}
-
-// parseExecPattern parses WASM protocol exec command patterns.
-func (c *CapabilityChecker) parseExecPattern(pattern string, grants *entities.GrantSet) bool {
-	req := entities.ExecCapabilityRequest{
-		Command: pattern,
-	}
-
-	return c.policy.CheckExec(req, grants)
 }
 
 // CheckNetwork performs typed network capability check.
@@ -298,18 +166,18 @@ func (c *CapabilityChecker) ToCapabilityGetter(pluginName string) CapabilityGett
 		// 1. Exec.Commands as "env:PATH" (Reglet pattern)
 		// 2. Env.Variables as "PATH" (SDK pattern)
 		if varName, found := strings.CutPrefix(capability, "env:"); found {
-			// First try Exec.Commands with "env:VARNAME" pattern
-			if err := c.Check(pluginName, "exec", capability); err == nil {
+			// Try Env.Variables with just "VARNAME"
+			if err := c.CheckEnvironment(pluginName, entities.EnvironmentRequest{Variable: varName}); err == nil {
 				return true
 			}
-			// Then try Env.Variables with just "VARNAME"
-			if err := c.CheckEnvironment(pluginName, entities.EnvironmentRequest{Variable: varName}); err == nil {
+			// If not found in explicit Env, fallback to checking Exec allowlist for "env:VARNAME"
+			if err := c.CheckExec(pluginName, entities.ExecCapabilityRequest{Command: capability}); err == nil {
 				return true
 			}
 			return false
 		}
-		// For other capabilities, use Check with exec kind
-		err := c.Check(pluginName, "exec", capability)
+		// For other capabilities, assume it is an exec command
+		err := c.CheckExec(pluginName, entities.ExecCapabilityRequest{Command: capability})
 		return err == nil
 	}
 }
