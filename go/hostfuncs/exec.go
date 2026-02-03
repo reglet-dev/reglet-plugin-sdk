@@ -126,9 +126,11 @@ func WithIsolatedEnv() ExecOption {
 // PerformExecCommand executes a command on the host.
 // This is a pure Go implementation with no WASM runtime dependencies.
 //
+// SECURITY: By default, commands run with an isolated environment (empty env).
+// This prevents leaking host credentials to executed commands.
+//
 // Security features can be enabled via options:
 //   - WithEnvSanitization: blocks dangerous environment variables
-//   - WithIsolatedEnv: prevents host environment leakage
 //   - WithMaxOutputSize: limits output to prevent OOM
 func PerformExecCommand(ctx context.Context, req ExecCommandRequest, opts ...ExecOption) ExecCommandResponse {
 	cfg := defaultExecConfig()
@@ -169,11 +171,11 @@ func PerformExecCommand(ctx context.Context, req ExecCommandRequest, opts ...Exe
 	// Set environment - either sanitized env or isolated empty env
 	if len(env) > 0 {
 		cmd.Env = env
-	} else if cfg.isolateEnv {
-		// SECURITY: Explicitly set empty env to prevent host environment leakage
+	} else {
+		// DEFAULT TO SAFE: Do not inherit host environment
+		// This prevents leaking sensitive env vars (AWS_ACCESS_KEY_ID, DB_PASSWORD, etc.)
 		cmd.Env = []string{}
 	}
-	// If neither condition is met, cmd.Env remains nil which inherits host env
 
 	// Use bounded buffers to limit output size
 	stdout := NewBoundedBuffer(cfg.maxOutputSize)
