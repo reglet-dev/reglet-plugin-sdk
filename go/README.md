@@ -488,43 +488,188 @@ return entities.ResultError(entities.NewErrorDetail("network", err.Error())), ni
 return entities.ResultError(entities.NewErrorDetail("config", "missing required field")), nil
 ```
 
-## Capabilities
+## Declaring Capabilities
 
-Plugins must declare their required capabilities. The recommended approach is using a `plugin.yaml` manifest file, which allows for structured and granular permission control.
+Plugins declare their required capabilities in the plugin manifest using `plugin.DefinePlugin()`. These capabilities represent what your plugin **requests** from the host runtime.
 
-### Manifest Example (`plugin.yaml`)
+### Basic Example
 
-```yaml
-name: my-plugin
-version: 1.0.0
-capabilities:
-  network:
-    rules:
-      - hosts: ["api.example.com", "*.google.com"]
-        ports: ["443", "80-90"]
-  fs:
-    rules:
-      - read: ["/data/**"]
-        write: ["/tmp/app.log"]
-  env:
-    vars: ["AWS_REGION", "DEBUG"]
-  exec:
-    commands: ["/usr/bin/grep"]
-  kv:
-    rules:
-      - keys: ["config-*"]
-        op: "read-write"
+```go
+package core
+
+import (
+	"github.com/reglet-dev/reglet-sdk/go/application/plugin"
+	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
+)
+
+var Plugin = plugin.DefinePlugin(plugin.PluginDef{
+	Name:        "http",
+	Version:     "1.0.0",
+	Description: "HTTP/HTTPS request checking",
+	Config:      &HTTPConfig{},
+	Capabilities: entities.GrantSet{
+		Network: &entities.NetworkCapability{
+			Rules: []entities.NetworkRule{
+				{Hosts: []string{"*"}, Ports: []string{"80", "443"}},
+			},
+		},
+	},
+})
 ```
 
 ### Capability Types
 
-- **Network**: `rules` array with `hosts` and `ports`. Wildcards (`*`) supported.
-- **FileSystem**: `rules` array with `read` and `write` paths. Recursive access via `**`.
-- **Environment**: `vars` array of permitted environment variables.
-- **Exec**: `commands` array of allowed external commands.
-- **KeyValue**: `rules` array with `keys` and `op` (`read`, `write`, or `read-write`).
+#### Network
 
-**Note**: Capabilities are granted by the host. The `plugin.yaml` defines what the plugin *requests*.
+Request access to specific hosts and ports:
+
+```go
+Capabilities: entities.GrantSet{
+	Network: &entities.NetworkCapability{
+		Rules: []entities.NetworkRule{
+			{Hosts: []string{"api.example.com"}, Ports: []string{"443"}},
+			{Hosts: []string{"*.cdn.com"}, Ports: []string{"80", "443"}},
+		},
+	},
+}
+```
+
+- **Hosts**: List of hostnames or IPs. Wildcards (`*`) supported.
+- **Ports**: List of port numbers as strings.
+
+#### FileSystem
+
+Request read and/or write access to paths:
+
+```go
+Capabilities: entities.GrantSet{
+	FS: &entities.FileSystemCapability{
+		Rules: []entities.FileSystemRule{
+			{Read: []string{"/etc/hosts", "/etc/passwd"}},
+			{Write: []string{"/tmp/output.log"}},
+			{Read: []string{"/data/**"}}, // Recursive with **
+		},
+	},
+}
+```
+
+#### Environment
+
+Request access to environment variables:
+
+```go
+Capabilities: entities.GrantSet{
+	Env: &entities.EnvCapability{
+		Vars: []string{"HOME", "USER", "AWS_REGION"},
+	},
+}
+```
+
+#### Exec
+
+Request permission to execute commands:
+
+```go
+Capabilities: entities.GrantSet{
+	Exec: &entities.ExecCapability{
+		Commands: []string{"/usr/bin/systemctl", "/bin/grep"},
+	},
+}
+```
+
+#### KeyValue
+
+Request access to key-value storage:
+
+```go
+Capabilities: entities.GrantSet{
+	KV: &entities.KVCapability{
+		Rules: []entities.KVRule{
+			{Keys: []string{"config-*"}, Op: "read"},
+			{Keys: []string{"cache-*"}, Op: "read-write"},
+		},
+	},
+}
+```
+
+- **Op**: `"read"`, `"write"`, or `"read-write"`
+
+### How Capabilities Work
+
+1. **Declaration**: Your plugin declares capabilities in `plugin.DefinePlugin()`
+2. **Request**: These are what your plugin **requests** from the host
+3. **Grant**: The host runtime determines what to **grant** based on its security policy
+4. **Runtime**: The host may grant more specific capabilities than you declared
+
+**Important**: The host runtime has full control over capability granting. Your plugin should request the **minimum** capabilities needed to function.
+
+### Best Practices
+
+#### Start Specific
+
+```go
+// ✅ Good - specific host and port
+{Hosts: []string{"api.github.com"}, Ports: []string{"443"}}
+
+// ❌ Too broad
+{Hosts: []string{"*"}, Ports: []string{"*"}}
+```
+
+#### Use Wildcards Sparingly
+
+```go
+// ✅ Acceptable - subdomain wildcard for CDN
+{Hosts: []string{"*.cloudfront.net"}, Ports: []string{"443"}}
+
+// ❌ Overly broad - entire internet
+{Hosts: []string{"*"}, Ports: []string{"80", "443"}}
+```
+
+#### Request Only What's Needed
+
+```go
+// ✅ Good - only the command you need
+Exec: &entities.ExecCapability{
+	Commands: []string{"/usr/bin/systemctl"},
+}
+
+// ❌ Bad - requesting shell access
+Exec: &entities.ExecCapability{
+	Commands: []string{"/bin/sh", "/bin/bash"},
+}
+```
+
+#### Document Capability Usage
+
+Add comments explaining why each capability is needed:
+
+```go
+Capabilities: entities.GrantSet{
+	Network: &entities.NetworkCapability{
+		Rules: []entities.NetworkRule{
+			// Need HTTPS for API health checks
+			{Hosts: []string{"api.example.com"}, Ports: []string{"443"}},
+		},
+	},
+	FS: &entities.FileSystemCapability{
+		Rules: []entities.FileSystemRule{
+			// Read system user database for validation
+			{Read: []string{"/etc/passwd"}},
+		},
+	},
+}
+```
+
+### Empty Capabilities
+
+If your plugin doesn't need any capabilities (e.g., it only processes configuration):
+
+```go
+Capabilities: entities.GrantSet{
+	// No capabilities needed
+}
+```
+
 
 ## Limitations
 
