@@ -43,3 +43,5 @@ bin/
 specs/
 reglet/
 .gemini/
+
+docs/
