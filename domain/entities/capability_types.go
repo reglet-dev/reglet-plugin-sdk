@@ -1,44 +1,27 @@
 package entities
 
+import "github.com/reglet-dev/reglet-abi/hostfunc"
+
 // NetworkCapability defines permitted network access.
-type NetworkCapability struct {
-	Rules []NetworkRule `json:"rules" yaml:"rules" jsonschema:"required"`
-}
+type NetworkCapability = hostfunc.NetworkCapability
 
 // NetworkRule defines a single network access rule.
-type NetworkRule struct {
-	Hosts []string `json:"hosts" yaml:"hosts" jsonschema:"required"`
-	Ports []string `json:"ports" yaml:"ports" jsonschema:"required"` // "80", "8000-9000", "*"
-}
+type NetworkRule = hostfunc.NetworkRule
 
 // FileSystemCapability defines permitted filesystem access.
-type FileSystemCapability struct {
-	Rules []FileSystemRule `json:"rules" yaml:"rules" jsonschema:"required"`
-}
+type FileSystemCapability = hostfunc.FileSystemCapability
 
 // FileSystemRule defines a single filesystem access rule.
-type FileSystemRule struct {
-	Read  []string `json:"read,omitempty" yaml:"read,omitempty"`
-	Write []string `json:"write,omitempty" yaml:"write,omitempty"`
-}
+type FileSystemRule = hostfunc.FileSystemRule
 
 // EnvironmentCapability defines permitted environment variables.
-type EnvironmentCapability struct {
-	Variables []string `json:"vars" yaml:"vars" jsonschema:"required"`
-}
+type EnvironmentCapability = hostfunc.EnvironmentCapability
 
 // ExecCapability defines permitted command execution.
-type ExecCapability struct {
-	Commands []string `json:"commands" yaml:"commands" jsonschema:"required"`
-}
+type ExecCapability = hostfunc.ExecCapability
 
 // KeyValueCapability defines permitted key-value store access.
-type KeyValueCapability struct {
-	Rules []KeyValueRule `json:"rules" yaml:"rules" jsonschema:"required"`
-}
+type KeyValueCapability = hostfunc.KeyValueCapability
 
 // KeyValueRule defines a single key-value access rule.
-type KeyValueRule struct {
-	Operation string   `json:"op" yaml:"op" jsonschema:"required,enum=read,enum=write,enum=read-write"`
-	Keys      []string `json:"keys" yaml:"keys" jsonschema:"required"`
-}
+type KeyValueRule = hostfunc.KeyValueRule

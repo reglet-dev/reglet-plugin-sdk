@@ -201,13 +201,13 @@ func wrapTypedMethod(method reflect.Value, inputType, outputType reflect.Type) (
 	}
 
 	// Validate input parameter (must be pointer to inputType)
-	expectedInputPtr := reflect.PtrTo(inputType)
+	expectedInputPtr := reflect.PointerTo(inputType)
 	if methodType.In(1) != expectedInputPtr {
 		return nil, fmt.Errorf("second parameter must be *%s, got %s", inputType.Name(), methodType.In(1))
 	}
 
 	// Validate output parameter (must be pointer to outputType)
-	expectedOutputPtr := reflect.PtrTo(outputType)
+	expectedOutputPtr := reflect.PointerTo(outputType)
 	if methodType.Out(0) != expectedOutputPtr {
 		return nil, fmt.Errorf("first return must be *%s, got %s", outputType.Name(), methodType.Out(0))
 	}

@@ -274,3 +274,49 @@ func kvCapabilitiesEqual(a, b *KeyValueCapability) bool {
 	}
 	return true
 }
+
+func networkRulesEqual(a, b NetworkRule) bool {
+	if len(a.Hosts) != len(b.Hosts) || len(a.Ports) != len(b.Ports) {
+		return false
+	}
+	for i := range a.Hosts {
+		if a.Hosts[i] != b.Hosts[i] {
+			return false
+		}
+	}
+	for i := range a.Ports {
+		if a.Ports[i] != b.Ports[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func fsRulesEqual(a, b FileSystemRule) bool {
+	if len(a.Read) != len(b.Read) || len(a.Write) != len(b.Write) {
+		return false
+	}
+	for i := range a.Read {
+		if a.Read[i] != b.Read[i] {
+			return false
+		}
+	}
+	for i := range a.Write {
+		if a.Write[i] != b.Write[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func kvRulesEqual(a, b KeyValueRule) bool {
+	if a.Operation != b.Operation || len(a.Keys) != len(b.Keys) {
+		return false
+	}
+	for i := range a.Keys {
+		if a.Keys[i] != b.Keys[i] {
+			return false
+		}
+	}
+	return true
+}

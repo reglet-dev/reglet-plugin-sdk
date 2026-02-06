@@ -5,20 +5,18 @@ package entities
 
 import (
 	"time"
+
+	abi "github.com/reglet-dev/reglet-abi"
+	"github.com/reglet-dev/reglet-abi/hostfunc"
 )
 
 // ResultStatus represents the outcome status of an SDK operation.
-type ResultStatus string
+type ResultStatus = abi.ResultStatus
 
 const (
-	// ResultStatusSuccess indicates the operation completed successfully.
-	ResultStatusSuccess ResultStatus = "success"
-
-	// ResultStatusFailure indicates the operation failed.
-	ResultStatusFailure ResultStatus = "failure"
-
-	// ResultStatusError indicates an error occurred during the operation.
-	ResultStatusError ResultStatus = "error"
+	ResultStatusSuccess = abi.ResultStatusSuccess
+	ResultStatusFailure = abi.ResultStatusFailure
+	ResultStatusError   = abi.ResultStatusError
 )
 
 // Result represents the general-purpose outcome of an SDK operation.
@@ -37,7 +35,7 @@ type Result struct {
 	Metadata *RunMetadata `json:"metadata,omitempty"`
 
 	// Error contains structured error information if Status is Error.
-	Error *ErrorDetail `json:"error,omitempty"`
+	Error *hostfunc.ErrorDetail `json:"error,omitempty"`
 
 	// Status indicates whether the operation succeeded, failed, or errored.
 	Status ResultStatus `json:"status"`
@@ -67,7 +65,7 @@ func ResultFailure(message string, data map[string]any) Result {
 
 // ResultError creates an error Result with the given error details.
 // Use this when the operation could not complete due to an error.
-func ResultError(err *ErrorDetail) Result {
+func ResultError(err *hostfunc.ErrorDetail) Result {
 	return Result{
 		Status:  ResultStatusError,
 		Message: err.Message,
@@ -112,6 +110,6 @@ func ResultFailurePtr(message string, data map[string]any) *Result {
 
 // ResultErrorPtr creates an error Result and returns a pointer to it.
 func ResultErrorPtr(errType, message string) *Result {
-	r := ResultError(&ErrorDetail{Type: errType, Message: message})
+	r := ResultError(&hostfunc.ErrorDetail{Type: errType, Message: message})
 	return &r
 }
