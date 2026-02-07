@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/reglet-dev/reglet-abi/hostfunc"
-	"github.com/reglet-dev/reglet-sdk/application/plugin"
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/application/plugin"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 )
 
 // TestCase defines a test case for a plugin.

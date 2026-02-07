@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 )
 
 // contextKey is a type alias for context value keys to avoid collisions.

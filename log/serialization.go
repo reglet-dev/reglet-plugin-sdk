@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 )
 
 // LogMessageWire is the JSON wire format for a log message from Guest to Host.

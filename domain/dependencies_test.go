@@ -63,14 +63,14 @@ func checkFileImports(t *testing.T, fset *token.FileSet, filename, pkg string) {
 
 		// Check for forbidden patterns
 		forbiddenPackages := []string{
-			"github.com/reglet-dev/reglet-sdk/application",
-			"github.com/reglet-dev/reglet-sdk/infrastructure",
-			"github.com/reglet-dev/reglet-sdk/net",
-			"github.com/reglet-dev/reglet-sdk/exec",
-			"github.com/reglet-dev/reglet-sdk/log",
-			"github.com/reglet-dev/reglet-sdk/helpers",
+			"github.com/reglet-dev/reglet-plugin-sdk/application",
+			"github.com/reglet-dev/reglet-plugin-sdk/infrastructure",
+			"github.com/reglet-dev/reglet-plugin-sdk/net",
+			"github.com/reglet-dev/reglet-plugin-sdk/exec",
+			"github.com/reglet-dev/reglet-plugin-sdk/log",
+			"github.com/reglet-dev/reglet-plugin-sdk/helpers",
 			// domain/entities CAN be imported by other domain packages (ports, errors)
-			"github.com/reglet-dev/reglet-sdk/internal/abi",
+			"github.com/reglet-dev/reglet-plugin-sdk/internal/abi",
 		}
 
 		for _, forbidden := range forbiddenPackages {
@@ -83,7 +83,7 @@ func checkFileImports(t *testing.T, fset *token.FileSet, filename, pkg string) {
 		// - Standard library
 		// - Other domain packages
 		// - testify (for tests only, but we skip test files)
-		if strings.Contains(importPath, "github.com/reglet-dev/reglet-sdk/") {
+		if strings.Contains(importPath, "github.com/reglet-dev/reglet-plugin-sdk/") {
 			// Must be importing from domain/
 			assert.True(t,
 				strings.Contains(importPath, "/domain/"),

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/infrastructure/wasm"
+	"github.com/reglet-dev/reglet-plugin-sdk/infrastructure/wasm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

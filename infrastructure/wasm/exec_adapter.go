@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
-	"github.com/reglet-dev/reglet-sdk/domain/ports"
-	"github.com/reglet-dev/reglet-sdk/internal/abi"
-	wasmcontext "github.com/reglet-dev/reglet-sdk/internal/wasmcontext"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/ports"
+	"github.com/reglet-dev/reglet-plugin-sdk/internal/abi"
+	wasmcontext "github.com/reglet-dev/reglet-plugin-sdk/internal/wasmcontext"
 )
 
 // Compile-time interface compliance check

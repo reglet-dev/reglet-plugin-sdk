@@ -5,7 +5,7 @@ package wasm
 import (
 	"context"
 
-	"github.com/reglet-dev/reglet-sdk/domain/ports"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/ports"
 )
 
 // Compile-time interface compliance check

@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
-	"github.com/reglet-dev/reglet-sdk/domain/ports"
-	"github.com/reglet-dev/reglet-sdk/internal/abi"
-	wasmcontext "github.com/reglet-dev/reglet-sdk/internal/wasmcontext"
-	_ "github.com/reglet-dev/reglet-sdk/log"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/ports"
+	"github.com/reglet-dev/reglet-plugin-sdk/internal/abi"
+	wasmcontext "github.com/reglet-dev/reglet-plugin-sdk/internal/wasmcontext"
+	_ "github.com/reglet-dev/reglet-plugin-sdk/log"
 )
 
 // MaxHTTPBodySize definition if needed, or import from somewhere.

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/reglet-dev/reglet-sdk/application/schema"
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/application/schema"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 )
 
 // PluginDef defines plugin identity and configuration.

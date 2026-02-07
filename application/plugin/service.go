@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 )
 
 // Service is embedded in service structs to provide metadata.

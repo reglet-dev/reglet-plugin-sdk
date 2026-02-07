@@ -4,7 +4,7 @@ package config
 import (
 	"fmt"
 
-	"github.com/reglet-dev/reglet-sdk/domain/errors"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/errors"
 )
 
 // Config represents plugin configuration as a key-value map.

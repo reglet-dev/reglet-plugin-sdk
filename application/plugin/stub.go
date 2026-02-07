@@ -5,7 +5,7 @@ package plugin
 import (
 	"context"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 )
 
 // StubPlugin is a no-op implementation of the Plugin interface for testing or non-WASM environments.

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/reglet-dev/reglet-sdk/internal/abi"
-	wasmcontext "github.com/reglet-dev/reglet-sdk/internal/wasmcontext"
+	"github.com/reglet-dev/reglet-plugin-sdk/internal/abi"
+	wasmcontext "github.com/reglet-dev/reglet-plugin-sdk/internal/wasmcontext"
 )
 
 // Define the host function signature for logging messages.

@@ -10,11 +10,11 @@ import (
 	"runtime/debug" // For stack traces in panic recovery
 	"time"          // For time.Now()
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
-	"github.com/reglet-dev/reglet-sdk/domain/errors"
-	"github.com/reglet-dev/reglet-sdk/internal/abi"
-	wasmcontext "github.com/reglet-dev/reglet-sdk/internal/wasmcontext"
-	_ "github.com/reglet-dev/reglet-sdk/log" // Initialize WASM logging handler
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/errors"
+	"github.com/reglet-dev/reglet-plugin-sdk/internal/abi"
+	wasmcontext "github.com/reglet-dev/reglet-plugin-sdk/internal/wasmcontext"
+	_ "github.com/reglet-dev/reglet-plugin-sdk/log" // Initialize WASM logging handler
 )
 
 // Define the functions that will be exported to the WASM host.

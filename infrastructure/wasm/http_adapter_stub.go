@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/domain/ports"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/ports"
 )
 
 // HTTPAdapter stub for native builds.

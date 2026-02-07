@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/application/config"
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
-	"github.com/reglet-dev/reglet-sdk/domain/ports"
-	"github.com/reglet-dev/reglet-sdk/infrastructure/wasm"
+	"github.com/reglet-dev/reglet-plugin-sdk/application/config"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/ports"
+	"github.com/reglet-dev/reglet-plugin-sdk/infrastructure/wasm"
 )
 
 // HTTPCheckOption is a functional option for configuring HTTP checks.

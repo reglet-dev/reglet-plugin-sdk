@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
-	"github.com/reglet-dev/reglet-sdk/domain/ports"
-	"github.com/reglet-dev/reglet-sdk/internal/abi"
-	_ "github.com/reglet-dev/reglet-sdk/log" // Initialize WASM logging handler
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/ports"
+	"github.com/reglet-dev/reglet-plugin-sdk/internal/abi"
+	_ "github.com/reglet-dev/reglet-plugin-sdk/log" // Initialize WASM logging handler
 )
 
 // Compile-time interface compliance check

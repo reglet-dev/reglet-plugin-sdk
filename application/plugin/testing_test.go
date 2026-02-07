@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 	"github.com/stretchr/testify/assert"
 )
 

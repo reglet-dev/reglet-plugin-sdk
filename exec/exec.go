@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/domain/ports"
-	"github.com/reglet-dev/reglet-sdk/infrastructure/wasm"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/ports"
+	"github.com/reglet-dev/reglet-plugin-sdk/infrastructure/wasm"
 )
 
 // Re-export types from ports for API compatibility

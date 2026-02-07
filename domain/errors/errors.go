@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/reglet-dev/reglet-sdk/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 )
 
 // ErrorDetail is an alias to entities.ErrorDetail for backward compatibility/convenience.
