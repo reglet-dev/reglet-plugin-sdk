@@ -1,511 +1,34 @@
-# Reglet Go SDK
+# Reglet Plugin SDK
 
-The Reglet Go SDK provides Go APIs for writing WebAssembly (WASM) plugins for the Reglet compliance platform. It handles memory management, host communication, plugin registration, and provides safe wrappers for network operations, command execution, and logging.
-
-## Version
-
-**Current Version**: `0.1.0-alpha`
-
-## Features
-
-- **Example-Based Testing**: Register examples that become documentation and auto-generated tests
-- **Full Context Propagation**: Deadlines, cancellation, and values flow to all operations
-- **Memory Management**: Automatic allocation tracking with 100 MB safety limit
-- **Network Operations**: DNS, HTTP, TCP, and SMTP with explicit API
-- **Command Execution**: Sandboxed command execution via host
-- **Type-Safe Wire Protocol**: JSON-based ABI with validation
+Go SDK for writing WASM plugins that run on the [Reglet](https://github.com/reglet-dev/reglet) host. Handles host communication, typed operations, schema generation, and capability declarations.
 
 ## Installation
 
 ```bash
-go get github.com/reglet-dev/reglet-sdk/go
+go get github.com/reglet-dev/reglet-plugin-sdk
 ```
+
+Requires Go 1.25+ and targets `GOOS=wasip1 GOARCH=wasm`.
 
 ## Quick Start
 
-### Minimal Plugin
+A plugin defines its metadata, registers services with typed operations, and implements handlers.
+
+### 1. Define the plugin
 
 ```go
-package main
-
-import (
-	"context"
-	"log/slog"
-
-	"github.com/reglet-dev/reglet-sdk/go/application/plugin"
-	"github.com/reglet-dev/reglet-sdk/go/application/schema"
-	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
-)
-
-type MyPlugin struct{}
-
-func main() {
-	plugin.Register(&MyPlugin{})
-}
-
-func (p *MyPlugin) Describe(ctx context.Context) (entities.Metadata, error) {
-	return entities.Metadata{
-		Name:         "my-plugin",
-		Version:      "1.0.0",
-		Description:  "Example compliance check plugin",
-		Capabilities: []entities.Capability{
-			entities.NewCapability("network:outbound", "example.com:443"),
-		},
-	}, nil
-}
-
-type Config struct {
-	Hostname string `json:"hostname" jsonschema:"description=Hostname to check"`
-}
-
-func (p *MyPlugin) Schema(ctx context.Context) ([]byte, error) {
-	return schema.GenerateSchema(Config{})
-}
-
-func (p *MyPlugin) Check(ctx context.Context, configMap map[string]any) (entities.Result, error) {
-	// ... config loading ...
-	hostname := "example.com"
-
-	slog.InfoContext(ctx, "Starting check", "hostname", hostname)
-
-	// Plugin logic here...
-
-	return entities.ResultSuccess("Check passed", map[string]any{
-		"hostname": hostname,
-		"status":   "ok",
-	}), nil
-}
-```
-
-### Building
-
-```bash
-GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm main.go
-```
-
-## Package Documentation
-
-Detailed documentation for each subpackage:
-
-- **[host](host/doc.go)** - Host runtime execution (WASM engine)
-- **[application/plugin](application/plugin/doc.go)** - Plugin development, typed operations (`Op[I,O]`, `RegisterOp`, `GetClient`)
-- **[application/schema](application/schema/generator.go)** - JSON Schema generation from Go structs
-- **[exec](exec/README.md)** - Command execution
-- **[log](log/README.md)** - Structured logging
-- **[net](net/README.md)** - Network operations (DNS, HTTP, TCP)
-
-## Core Concepts
-
-### Plugin Interface
-
-Every plugin must implement three methods:
-
-```go
-type Plugin interface {
-    // Describe returns metadata about the plugin
-    Describe(ctx context.Context) (entities.Metadata, error)
-
-    // Schema returns JSON schema for plugin configuration
-    Schema(ctx context.Context) ([]byte, error)
-
-    // Check executes the main plugin logic
-    Check(ctx context.Context, config map[string]any) (entities.Result, error)
-}
-```
-
-### Typed Operations (Recommended)
-
-For plugins with multiple operations or complex input/output types, use the **typed operations pattern**. This provides type safety, auto-generated JSON schemas, and example-based testing.
-
-#### Defining a Typed Service
-
-```go
-package services
-
-import (
-    "context"
-    "github.com/reglet-dev/reglet-sdk/go/application/plugin"
-    "github.com/reglet-dev/reglet-sdk/go/domain/ports"
-)
-
-// Input/Output types with JSON schema tags
-type ResolveInput struct {
-    Hostname   string `json:"hostname" jsonschema:"required,description=Target hostname to resolve"`
-    RecordType string `json:"record_type,omitempty" jsonschema:"enum=A,enum=MX,enum=TXT,default=A"`
-}
-
-type ResolveOutput struct {
-    Hostname string   `json:"hostname" jsonschema:"description=Queried hostname"`
-    Records  []string `json:"records" jsonschema:"description=Resolved DNS records"`
-}
-
-// Service struct with typed Op fields
-type DNSService struct {
-    plugin.Service `name:"dns" desc:"DNS resolution and record lookup"`
-
-    Resolve plugin.Op[ResolveInput, ResolveOutput] `desc:"Resolve hostname" method:"ResolveHandler"`
-}
-
-func init() {
-    // Register operation with examples (used for docs and auto-testing)
-    plugin.RegisterOp[ResolveInput, ResolveOutput]("Resolve",
-        plugin.Example[ResolveInput, ResolveOutput]{
-            Name:        "basic_a",
-            Description: "Resolve A record",
-            Input:       ResolveInput{Hostname: "example.com", RecordType: "A"},
-            ExpectedOutput: &ResolveOutput{
-                Hostname: "example.com",
-                Records:  []string{"93.184.216.34"},
-            },
-        },
-        plugin.Example[ResolveInput, ResolveOutput]{
-            Name:          "nxdomain",
-            Description:   "Non-existent domain",
-            Input:         ResolveInput{Hostname: "invalid.test"},
-            ExpectedError: "DNS lookup failed",
-        },
-    )
-
-    // Auto-register service with plugin
-    plugin.MustRegisterService(core.Plugin, &DNSService{})
-}
-
-// Typed handler - receives parsed input, returns typed output
-func (s *DNSService) ResolveHandler(ctx context.Context, in *ResolveInput) (*ResolveOutput, error) {
-    // Get client from context (injected by runtime)
-    resolver := plugin.GetClient[ports.DNSResolver](ctx)
-
-    records, err := resolver.LookupHost(ctx, in.Hostname)
-    if err != nil {
-        return nil, fmt.Errorf("DNS lookup failed: %w", err)
-    }
-
-    return &ResolveOutput{
-        Hostname: in.Hostname,
-        Records:  records,
-    }, nil
-}
-```
-
-#### Benefits
-
-| Feature | Description |
-|---------|-------------|
-| **Type Safety** | Handlers receive `*Input` and return `*Output` - no manual parsing |
-| **Auto Schemas** | JSON schemas generated from struct tags for CLI and docs |
-| **Example Testing** | `GenerateExampleTests()` creates tests from registered examples |
-| **Client Injection** | `plugin.GetClient[T](ctx)` provides type-safe client access |
-| **Rich Manifests** | Manifest includes `input_fields`, `output_schema`, and `examples` |
-
-#### Client Injection
-
-Access injected clients via context with type safety:
-
-```go
-// Get client - panics if wrong type or missing
-client := plugin.GetClient[*MyClient](ctx)
-
-// Try to get client - returns nil if missing
-client, ok := plugin.TryGetClient[*MyClient](ctx)
-if !ok {
-    return nil, errors.New("client not injected")
-}
-```
-
-#### Auto-Generated Tests
-
-Use `GenerateExampleTests` to create tests from registered examples:
-
-```go
-package services_test
-
-import (
-    "testing"
-    "github.com/reglet-dev/reglet-sdk/go/application/plugin"
-    "myproject/plugins/dns/core"
-)
-
-func TestExamples(t *testing.T) {
-    mockClient := &mockDNSResolver{
-        records: map[string][]string{
-            "example.com": {"93.184.216.34"},
-        },
-    }
-    // Runs all registered examples as subtests
-    plugin.GenerateExampleTests(t, core.Plugin, mockClient)
-}
-```
-
-#### Manifest Output
-
-Typed operations generate rich manifests for CLI tooling:
-
-```json
-{
-  "services": {
-    "dns": {
-      "operations": [{
-        "name": "resolve",
-        "description": "Resolve hostname",
-        "input_fields": ["hostname", "record_type"],
-        "output_schema": {
-          "properties": {
-            "hostname": {"type": "string"},
-            "records": {"type": "array", "items": {"type": "string"}}
-          }
-        },
-        "examples": [
-          {"name": "basic_a", "input": {"hostname": "example.com"}}
-        ]
-      }]
-    }
-  }
-}
-```
-
-### Context Propagation
-
-All SDK functions properly propagate Go contexts:
-
-```go
-// Timeouts
-ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-defer cancel()
-resp, err := net.Get(ctx, url) // Respects 5 second timeout
-
-// Cancellation
-ctx, cancel := context.WithCancel(context.Background())
-go func() {
-    time.Sleep(1 * time.Second)
-    cancel() // Cancels the HTTP request
-}()
-resp, err := net.Get(ctx, url)
-
-// Values (for request tracing)
-ctx = context.WithValue(ctx, "request_id", "abc123")
-resp, err := net.Get(ctx, url) // request_id passed to host logs
-```
-
-### Memory Management
-
-The SDK tracks all memory allocations and enforces a **100 MB limit**:
-
-```go
-const MaxTotalAllocations = 100 * 1024 * 1024 // 100 MB
-```
-
-If your plugin exceeds this limit, it will panic with:
-```
-abi: memory allocation limit exceeded (requested: X bytes, current: Y bytes, limit: 104857600 bytes)
-```
-
-**Best Practices:**
-- Stream large data instead of loading into memory
-- Free resources promptly (close HTTP response bodies)
-- Avoid caching large datasets in plugin memory
-
-### Version Checking
-
-The SDK automatically reports its version in plugin metadata:
-
-```go
-metadata, _ := plugin.Describe(ctx)
-// metadata.SDKVersion = "0.1.0-alpha"
-// metadata.MinHostVersion = "0.2.0"
-```
-
-The **host is responsible** for validating compatibility:
-- If host version < MinHostVersion → reject plugin
-- If plugin uses unsupported SDK features → runtime errors
-
-## Network Operations
-
-### DNS Resolution
-
-Use the `WasmResolver` for DNS lookups:
-
-```go
-import sdknet "github.com/reglet-dev/reglet-sdk/go/net"
-
-resolver := &sdknet.WasmResolver{
-    Nameserver: "", // Empty = use host's default
-}
-ips, err := resolver.LookupHost(ctx, "example.com")
-```
-
-See [net/README.md](net/README.md) for full DNS API documentation.
-
-### HTTP Requests
-
-**Option 1 - SDK Helpers (Recommended):**
-```go
-import sdknet "github.com/reglet-dev/reglet-sdk/go/net"
-
-resp, err := sdknet.Get(ctx, "https://example.com")
-defer resp.Body.Close()
-```
-
-**Option 2 - Custom Client:**
-```go
-import (
-    "net/http"
-    sdknet "github.com/reglet-dev/reglet-sdk/go/net"
-)
-
-client := &http.Client{
-    Transport: &sdknet.WasmTransport{},
-    Timeout:   10 * time.Second,
-}
-resp, err := client.Get("https://example.com")
-```
-
-#### HTTP Body Size Limit
-
-HTTP response bodies are limited to **10 MB** (`net.MaxHTTPBodySize`).
-
-See [net/README.md](net/README.md) for full HTTP API documentation.
-
-### TCP Connections
-
-```go
-import (
-	sdknet "github.com/reglet-dev/reglet-sdk/go/net"
-	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
-)
-
-// DialTCP(ctx, host, port, timeoutMs, useTLS)
-conn, err := sdknet.DialTCP(ctx, "example.com", "443", 5000, true)
-if err != nil {
-    return entities.ResultFailure("tcp connection failed", map[string]any{"error": err.Error()}), nil
-}
-
-return entities.ResultSuccess("connected", map[string]any{
-    "connected":      conn.Connected,
-    "tls":            conn.TLS,
-    "tls_version":    conn.TLSVersion,
-    "response_ms":    conn.ResponseTimeMs,
-}), nil
-```
-
-See [net/README.md](net/README.md) for full TCP API documentation.
-
-## Command Execution
-
-Execute host commands via sandboxed interface:
-
-```go
-import (
-	"github.com/reglet-dev/reglet-sdk/go/exec"
-	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
-)
-
-req := exec.CommandRequest{
-    Command: "systemctl",
-    Args:    []string{"is-active", "nginx"},
-}
-
-result, err := exec.Run(ctx, req)
-if err != nil {
-    return entities.ResultFailure("execution error", map[string]any{"error": err.Error()}), nil
-}
-
-serviceActive := result.ExitCode == 0
-
-return entities.ResultSuccess("service checked", map[string]any{
-    "service": "nginx",
-    "active":  serviceActive,
-    "stdout":  result.Stdout,
-}), nil
-```
-
-See [exec/README.md](exec/README.md) for full exec API documentation.
-
-## Structured Logging
-
-Use Go's standard `log/slog` package:
-
-```go
-import (
-    "log/slog"
-    "github.com/reglet-dev/reglet-sdk/go/domain/entities"
-    _ "github.com/reglet-dev/reglet-sdk/go/log" // Initialize WASM logging
-)
-
-func (p *MyPlugin) Check(ctx context.Context, config map[string]any) (entities.Result, error) {
-    // Context-aware logging (recommended)
-    slog.InfoContext(ctx, "Starting check", "config_keys", len(config))
-
-    // Structured attributes
-    slog.Debug("Processing item", "item_id", 123, "status", "pending")
-
-    // Error logging
-    // ...
-
-    return entities.ResultSuccess("ok", nil), nil
-}
-```
-
-See [log/README.md](log/README.md) for full logging API documentation.
-
-## Schema Generation
-
-Generate JSON Schema from Go structs using `application/schema`:
-
-```go
-import "github.com/reglet-dev/reglet-sdk/go/application/schema"
-
-type PluginConfig struct {
-    Hostname string `json:"hostname" jsonschema:"description=Target hostname"`
-    Port     int    `json:"port" jsonschema:"default=443,description=Target port"`
-}
-
-func (p *MyPlugin) Schema(ctx context.Context) ([]byte, error) {
-    return schema.GenerateSchema(PluginConfig{})
-}
-```
-
-**Supported Tags:**
-- `json:"name"` - Field name
-- `jsonschema:"..."` - Schema attributes (default, description, etc.)
-
-## Error Handling
-
-Use SDK error helpers for consistent error reporting:
-
-```go
-// Success
-return entities.ResultSuccess("Check passed", map[string]any{
-    "result": "ok",
-}), nil
-
-// Simple failure
-return entities.ResultFailure("Invalid hostname format", nil), nil
-
-// Network error
-return entities.ResultError(entities.NewErrorDetail("network", err.Error())), nil
-
-// Configuration error
-return entities.ResultError(entities.NewErrorDetail("config", "missing required field")), nil
-```
-
-## Declaring Capabilities
-
-Plugins declare their required capabilities in the plugin manifest using `plugin.DefinePlugin()`. These capabilities represent what your plugin **requests** from the host runtime.
-
-### Basic Example
-
-```go
+// core/plugin.go
 package core
 
 import (
-	"github.com/reglet-dev/reglet-sdk/go/application/plugin"
-	"github.com/reglet-dev/reglet-sdk/go/domain/entities"
+	"github.com/reglet-dev/reglet-plugin-sdk/application/plugin"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/entities"
 )
 
 var Plugin = plugin.DefinePlugin(plugin.PluginDef{
 	Name:        "http",
 	Version:     "1.0.0",
-	Description: "HTTP/HTTPS request checking",
+	Description: "HTTP/HTTPS request checking and validation",
 	Config:      &HTTPConfig{},
 	Capabilities: entities.GrantSet{
 		Network: &entities.NetworkCapability{
@@ -515,396 +38,299 @@ var Plugin = plugin.DefinePlugin(plugin.PluginDef{
 		},
 	},
 })
+
+type HTTPConfig struct {
+	URL            string `json:"url" jsonschema:"required,description=URL to request"`
+	Method         string `json:"method,omitempty" jsonschema:"enum=GET,enum=POST,default=GET"`
+	ExpectedStatus int    `json:"expected_status,omitempty" jsonschema:"default=200"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"default=30"`
+}
 ```
 
-### Capability Types
+### 2. Register typed operations
 
-#### Network
+```go
+// services/check.go
+package services
 
-Request access to specific hosts and ports:
+import (
+	"context"
+	"fmt"
+
+	"github.com/reglet-dev/reglet-plugin-sdk/application/plugin"
+	"github.com/reglet-dev/reglet-plugin-sdk/domain/ports"
+	"my-plugin/core"
+)
+
+type CheckInput struct {
+	URL            string `json:"url" jsonschema:"required,description=URL to request"`
+	ExpectedStatus int    `json:"expected_status,omitempty" jsonschema:"default=200"`
+}
+
+type CheckOutput struct {
+	StatusCode int    `json:"status_code"`
+	URL        string `json:"url"`
+}
+
+type HTTPService struct {
+	plugin.Service `name:"http" desc:"HTTP request checking"`
+
+	Check plugin.Op[CheckInput, CheckOutput] `desc:"Check URL" method:"CheckHandler"`
+}
+
+func init() {
+	plugin.RegisterOp[CheckInput, CheckOutput]("Check",
+		plugin.Example[CheckInput, CheckOutput]{
+			Name:  "basic",
+			Input: CheckInput{URL: "https://example.com", ExpectedStatus: 200},
+			ExpectedOutput: &CheckOutput{
+				StatusCode: 200,
+				URL:        "https://example.com",
+			},
+		},
+	)
+	plugin.MustRegisterService(core.Plugin, &HTTPService{})
+}
+
+func (s *HTTPService) CheckHandler(ctx context.Context, in *CheckInput) (*CheckOutput, error) {
+	client := plugin.GetClient[ports.HTTPClient](ctx)
+
+	resp, err := client.Get(ctx, in.URL)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	return &CheckOutput{
+		StatusCode: resp.StatusCode,
+		URL:        in.URL,
+	}, nil
+}
+```
+
+### 3. Wire up the entry point
+
+```go
+// plugin.go
+package main
+
+import (
+	"github.com/reglet-dev/reglet-plugin-sdk/application/plugin"
+	_ "my-plugin/services" // auto-registers via init()
+)
+
+func main() {
+	plugin.Register(&myPlugin{})
+}
+```
+
+### 4. Build
+
+```bash
+GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm .
+```
+
+## Plugin Interface
+
+Every plugin implements two methods:
+
+```go
+type Plugin interface {
+	Manifest(ctx context.Context) (*entities.Manifest, error)
+	Check(ctx context.Context, config []byte) (*entities.Result, error)
+}
+```
+
+`Manifest` returns metadata (name, version, capabilities, services, config schema). `Check` executes the plugin logic. If you use `DefinePlugin` + typed operations, the SDK generates the manifest and routes config to the correct handler automatically.
+
+## Typed Operations
+
+The `Op[I, O]` generic type gives you type-safe handlers with auto-generated JSON schemas.
+
+```go
+type MyService struct {
+	plugin.Service `name:"dns" desc:"DNS resolution"`
+
+	Resolve plugin.Op[ResolveInput, ResolveOutput] `desc:"Resolve hostname" method:"ResolveHandler"`
+}
+```
+
+- `I` and `O` are plain structs with `json` and `jsonschema` tags
+- The SDK parses input JSON into `*I`, calls your handler, and serializes `*O` into the result
+- `RegisterOp` captures type info and examples before `MustRegisterService` wires everything up
+- Field names are auto-converted to snake_case for the operation name (`Resolve` -> `resolve`)
+
+### Client injection
+
+Handlers get clients from context, injected by the host runtime:
+
+```go
+func (s *DNSService) ResolveHandler(ctx context.Context, in *ResolveInput) (*ResolveOutput, error) {
+	resolver := plugin.GetClient[ports.DNSResolver](ctx)
+	records, err := resolver.LookupHost(ctx, in.Hostname)
+	// ...
+}
+```
+
+`GetClient[T]` panics if the client is missing or wrong type. Use `TryGetClient[T]` for a safe version.
+
+### Examples
+
+Register examples alongside operations for documentation and the CLI help text:
+
+```go
+plugin.RegisterOp[ResolveInput, ResolveOutput]("Resolve",
+	plugin.Example[ResolveInput, ResolveOutput]{
+		Name:           "basic_a",
+		Description:    "Resolve A record",
+		Input:          ResolveInput{Hostname: "example.com", RecordType: "A"},
+		ExpectedOutput: &ResolveOutput{Hostname: "example.com", Records: []string{"93.184.216.34"}},
+	},
+	plugin.Example[ResolveInput, ResolveOutput]{
+		Name:          "nxdomain",
+		Description:   "Non-existent domain",
+		Input:         ResolveInput{Hostname: "invalid.test"},
+		ExpectedError: "DNS lookup failed",
+	},
+)
+```
+
+## Capabilities
+
+Plugins declare what they need from the host. The host decides what to grant.
 
 ```go
 Capabilities: entities.GrantSet{
 	Network: &entities.NetworkCapability{
 		Rules: []entities.NetworkRule{
 			{Hosts: []string{"api.example.com"}, Ports: []string{"443"}},
-			{Hosts: []string{"*.cdn.com"}, Ports: []string{"80", "443"}},
 		},
 	},
-}
-```
-
-- **Hosts**: List of hostnames or IPs. Wildcards (`*`) supported.
-- **Ports**: List of port numbers as strings.
-
-#### FileSystem
-
-Request read and/or write access to paths:
-
-```go
-Capabilities: entities.GrantSet{
 	FS: &entities.FileSystemCapability{
 		Rules: []entities.FileSystemRule{
-			{Read: []string{"/etc/hosts", "/etc/passwd"}},
-			{Write: []string{"/tmp/output.log"}},
-			{Read: []string{"/data/**"}}, // Recursive with **
+			{Read: []string{"/etc/hosts"}},
 		},
 	},
-}
-```
-
-#### Environment
-
-Request access to environment variables:
-
-```go
-Capabilities: entities.GrantSet{
-	Env: &entities.EnvCapability{
-		Vars: []string{"HOME", "USER", "AWS_REGION"},
-	},
-}
-```
-
-#### Exec
-
-Request permission to execute commands:
-
-```go
-Capabilities: entities.GrantSet{
 	Exec: &entities.ExecCapability{
-		Commands: []string{"/usr/bin/systemctl", "/bin/grep"},
+		Commands: []string{"/usr/bin/systemctl"},
 	},
-}
-```
-
-#### KeyValue
-
-Request access to key-value storage:
-
-```go
-Capabilities: entities.GrantSet{
+	Env: &entities.EnvCapability{
+		Vars: []string{"HOME", "AWS_REGION"},
+	},
 	KV: &entities.KVCapability{
 		Rules: []entities.KVRule{
-			{Keys: []string{"config-*"}, Op: "read"},
 			{Keys: []string{"cache-*"}, Op: "read-write"},
 		},
 	},
 }
 ```
 
-- **Op**: `"read"`, `"write"`, or `"read-write"`
+Request the minimum you need. Prefer specific hosts over wildcards, specific commands over shells.
 
-### How Capabilities Work
+## Domain Ports
 
-1. **Declaration**: Your plugin declares capabilities in `plugin.DefinePlugin()`
-2. **Request**: These are what your plugin **requests** from the host
-3. **Grant**: The host runtime determines what to **grant** based on its security policy
-4. **Runtime**: The host may grant more specific capabilities than you declared
+The SDK defines interfaces for host-provided services. WASM adapters implement these using host function imports.
 
-**Important**: The host runtime has full control over capability granting. Your plugin should request the **minimum** capabilities needed to function.
+| Interface | Methods |
+|-----------|---------|
+| `ports.HTTPClient` | `Do`, `Get`, `Post` |
+| `ports.DNSResolver` | `LookupHost`, `LookupCNAME`, `LookupMX`, `LookupTXT`, `LookupNS` |
+| `ports.TCPDialer` | `Dial`, `DialWithTimeout`, `DialSecure` |
+| `ports.SMTPClient` | `Connect` |
+| `ports.CommandRunner` | `Run` |
 
-### Best Practices
+## High-Level Check Functions
 
-#### Start Specific
-
-```go
-// ✅ Good - specific host and port
-{Hosts: []string{"api.github.com"}, Ports: []string{"443"}}
-
-// ❌ Too broad
-{Hosts: []string{"*"}, Ports: []string{"*"}}
-```
-
-#### Use Wildcards Sparingly
+The `net/` and `exec/` packages provide ready-made check functions with functional options:
 
 ```go
-// ✅ Acceptable - subdomain wildcard for CDN
-{Hosts: []string{"*.cloudfront.net"}, Ports: []string{"443"}}
+import sdknet "github.com/reglet-dev/reglet-plugin-sdk/net"
 
-// ❌ Overly broad - entire internet
-{Hosts: []string{"*"}, Ports: []string{"80", "443"}}
+result, err := sdknet.RunHTTPCheck(ctx, configMap)
+result, err := sdknet.RunDNSCheck(ctx, configMap)
+result, err := sdknet.RunTCPCheck(ctx, configMap)
+result, err := sdknet.RunSMTPCheck(ctx, configMap)
 ```
 
-#### Request Only What's Needed
+Inject mocks for testing:
 
 ```go
-// ✅ Good - only the command you need
-Exec: &entities.ExecCapability{
-	Commands: []string{"/usr/bin/systemctl"},
-}
-
-// ❌ Bad - requesting shell access
-Exec: &entities.ExecCapability{
-	Commands: []string{"/bin/sh", "/bin/bash"},
-}
+result, err := sdknet.RunHTTPCheck(ctx, cfg, sdknet.WithHTTPClient(mockClient))
 ```
-
-#### Document Capability Usage
-
-Add comments explaining why each capability is needed:
-
-```go
-Capabilities: entities.GrantSet{
-	Network: &entities.NetworkCapability{
-		Rules: []entities.NetworkRule{
-			// Need HTTPS for API health checks
-			{Hosts: []string{"api.example.com"}, Ports: []string{"443"}},
-		},
-	},
-	FS: &entities.FileSystemCapability{
-		Rules: []entities.FileSystemRule{
-			// Read system user database for validation
-			{Read: []string{"/etc/passwd"}},
-		},
-	},
-}
-```
-
-### Empty Capabilities
-
-If your plugin doesn't need any capabilities (e.g., it only processes configuration):
-
-```go
-Capabilities: entities.GrantSet{
-	// No capabilities needed
-}
-```
-
-
-## Limitations
-
-### Network
-
-- **No Streaming**: HTTP responses are fully buffered (10 MB limit)
-- **No WebSockets**: Not supported
-- **TCP Check-Only**: Can connect but not perform bidirectional communication
-- **No UDP**: UDP protocol not supported
-- **No Raw Sockets**: Only standard protocols (HTTP, TCP, DNS)
-
-### Execution
-
-- **Single-Threaded**: WASI Preview 1 is single-threaded (use goroutines for logical concurrency)
-- **No Interactive Commands**: Commands requiring stdin will fail
-- **No Shell Features**: Commands executed directly, not through a shell
-
-### Filesystem
-
-- **Sandboxed Access**: Restricted to paths granted by capabilities
-- **No Direct WASI**: Must use host functions, not WASI filesystem directly
-
-### Memory
-
-- **100 MB Limit**: Total allocations capped at 100 MB
-- **No Memory Pooling**: Each allocation goes through Go's allocator
-
-## Best Practices
-
-### 1. Always Use Context with Timeouts
-
-```go
-ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-
-// All operations respect the timeout
-resp, err := sdknet.Get(ctx, url)
-result, err := exec.Run(ctx, req)
-ips, err := resolver.LookupHost(ctx, hostname)
-```
-
-### 2. Close HTTP Response Bodies
-
-```go
-resp, err := sdknet.Get(ctx, url)
-if err != nil {
-    return entities.ResultError(entities.NewErrorDetail("http", err.Error())), nil
-}
-defer resp.Body.Close() // ✅ Always defer close
-
-body, _ := io.ReadAll(resp.Body)
-```
-
-### 3. Use Structured Logging
-
-```go
-// ❌ Bad
-slog.Info(fmt.Sprintf("User %s logged in", userID))
-
-// ✅ Good
-slog.Info("User logged in", "user_id", userID)
-```
-
-### 4. Handle Expected Errors Gracefully
-
-```go
-result, err := exec.Run(ctx, req)
-if err != nil {
-    // Unexpected error (command not found, permission denied)
-    return entities.ResultError(entities.NewErrorDetail("exec", err.Error())), nil
-}
-
-if result.ExitCode != 0 {
-    // Expected non-zero exit (command ran but failed)
-    return entities.ResultSuccess("Check failed", map[string]any{
-        "check_passed": false,
-        "exit_code":    result.ExitCode,
-        "stderr":       result.Stderr,
-    }), nil
-}
-```
-
-### 5. Request Minimal Capabilities
-
-```go
-// ❌ Too broad
-{Kind: "network:outbound", Pattern: "*"}
-
-// ✅ Specific
-{Kind: "network:outbound", Pattern: "api.example.com:443"}
-```
-
-## Testing Plugins
-
-### Unit Testing
-
-```go
-func TestMyPlugin_Check(t *testing.T) {
-    plugin := &MyPlugin{}
-    config := map[string]any{
-        "hostname": "example.com",
-    }
-
-    ctx := context.Background()
-    result, err := plugin.Check(ctx, config)
-
-    require.NoError(t, err)
-    assert.Equal(t, entities.ResultStatusSuccess, result.Status)
-}
-```
-
-### Testing Typed Operations
-
-For plugins using typed operations, use `GenerateExampleTests` to auto-generate tests from registered examples:
-
-```go
-func TestExamples(t *testing.T) {
-    // Create mock client matching your service's expected client type
-    mockClient := &mockDNSResolver{
-        records: map[string][]string{
-            "example.com": {"93.184.216.34"},
-        },
-    }
-
-    // Runs all registered examples as subtests
-    plugin.GenerateExampleTests(t, core.Plugin, mockClient)
-}
-
-// Test typed handlers directly
-func TestResolve_Handler(t *testing.T) {
-    svc := &DNSService{}
-
-    ctx := context.Background()
-    ctx = plugin.WithClient(ctx, &mockDNSResolver{...})
-
-    out, err := svc.ResolveHandler(ctx, &ResolveInput{
-        Hostname:   "example.com",
-        RecordType: "A",
-    })
-
-    require.NoError(t, err)
-    assert.Equal(t, "example.com", out.Hostname)
-    assert.Contains(t, out.Records, "93.184.216.34")
-}
-```
-
-For advanced test configuration:
-
-```go
-func TestExamples_WithConfig(t *testing.T) {
-    config := plugin.ExampleTestConfig{
-        SkipExamples: []string{"slow_test", "requires_network"},
-        MockClientFactory: func(exampleName string) any {
-            // Return different mocks based on example
-            if exampleName == "error_case" {
-                return &mockDNSResolver{shouldFail: true}
-            }
-            return &mockDNSResolver{}
-        },
-    }
-
-    plugin.GenerateExampleTestsWithConfig(t, core.Plugin, nil, config)
-}
-```
-
-### Integration Testing
-
-```bash
-# Build WASM plugin
-GOOS=wasip1 GOARCH=wasm go build -o plugin.wasm
-
-# Run with reglet CLI
-reglet check --profile test-profile.yaml
-```
-
-## Troubleshooting
-
-### "memory allocation limit exceeded"
-
-**Cause**: Your plugin exceeded the 100 MB memory limit.
-
-**Solutions:**
-- Stream data instead of loading into memory
-- Close HTTP response bodies promptly
-- Avoid caching large datasets
-- Process data in chunks
-
-### "HTTP response body exceeds maximum size"
-
-**Cause**: Response body > 10 MB.
-
-**Solutions:**
-- Request smaller data chunks (use pagination)
-- Stream responses if host supports it
-- Compress responses at source
-
-### "context deadline exceeded"
-
-**Cause**: Operation took longer than context timeout.
-
-**Solutions:**
-- Increase context timeout
-- Optimize slow operations
-- Use concurrent requests (via goroutines)
 
 ## Config Helpers
 
-The `application/config` package provides safe extraction functions:
+Safe extraction from `map[string]any`:
 
 ```go
-import "github.com/reglet-dev/reglet-sdk/go/application/config"
+import "github.com/reglet-dev/reglet-plugin-sdk/application/config"
 
-// Required fields - returns error if missing
-hostname, err := config.MustGetString(cfgMap, "hostname")
-port, err := config.MustGetInt(cfgMap, "port")
-
-// Optional fields with defaults
-timeout := config.GetIntDefault(cfgMap, "timeout", 30)
-protocol := config.GetStringDefault(cfgMap, "protocol", "https")
-
-// Safe extraction
-value, ok := config.GetString(cfgMap, "optional_field")
+hostname, err := config.MustGetString(cfg, "hostname")     // error if missing
+port := config.GetIntDefault(cfg, "port", 443)              // default if missing
+verbose, ok := config.GetBool(cfg, "verbose")               // returns ok=false if missing
 ```
 
-## Examples
+## Results
 
-See the [examples directory](examples/) for complete working plugins:
+```go
+entities.ResultSuccess("check passed", map[string]any{"status": "ok"})
+entities.ResultFailure("check failed", map[string]any{"reason": "timeout"})
+entities.ResultError(entities.NewErrorDetail("network", "connection refused"))
+```
 
-- **[plugin](examples/plugin/)** - A complete example plugin implementing a TLS check
-- **[host-runtime](examples/host-runtime/)** - An example host runtime demonstrating how to execute plugins using the SDK host package
+Typed handlers return `(*Output, error)` and the SDK wraps it into a Result automatically.
 
-## Contributing
+## Logging
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for development guidelines.
+Import the log package to route `slog` calls through the host:
+
+```go
+import (
+	"log/slog"
+	_ "github.com/reglet-dev/reglet-plugin-sdk/log"
+)
+
+slog.InfoContext(ctx, "resolving", "hostname", hostname)
+```
+
+## Testing
+
+```go
+import plugintest "github.com/reglet-dev/reglet-plugin-sdk/testing"
+
+func TestPlugin(t *testing.T) {
+	plugintest.RunPluginTests(t, myPlugin, []plugintest.TestCase{
+		{
+			Name:   "basic",
+			Config: map[string]any{"url": "https://example.com"},
+			Validate: func(t *testing.T, r *entities.Result) {
+				plugintest.AssertSuccess(t, r)
+				plugintest.AssertDataField(t, r, "status_code", 200)
+			},
+		},
+	})
+}
+```
+
+For typed handlers, test directly:
+
+```go
+func TestCheckHandler(t *testing.T) {
+	svc := &HTTPService{}
+	ctx := plugin.WithClient(context.Background(), mockHTTPClient)
+
+	out, err := svc.CheckHandler(ctx, &CheckInput{URL: "https://example.com"})
+	require.NoError(t, err)
+	assert.Equal(t, 200, out.StatusCode)
+}
+```
+
+## Limitations
+
+- **Single-threaded**: WASI Preview 1; goroutines work for logical concurrency only
+- **Buffered I/O**: HTTP responses and command output are fully buffered in memory
+- **100 MB memory limit**: The SDK tracks allocations and panics if exceeded
+- **No raw sockets or UDP**: Only HTTP, DNS, TCP, and SMTP via host functions
 
 ## License
 
-See [LICENSE](../../LICENSE) for details.
+See [LICENSE](LICENSE)
