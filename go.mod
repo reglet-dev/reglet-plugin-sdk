@@ -1,6 +1,6 @@
 module github.com/reglet-dev/reglet-plugin-sdk
 
-go 1.25.5
+go 1.25.7
 
 require (
 	github.com/invopop/jsonschema v0.13.0
